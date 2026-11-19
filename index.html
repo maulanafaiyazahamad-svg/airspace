@@ -179,6 +179,9 @@ button{font:inherit;color:inherit}
 #load .bar{height:3px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}
 #load .bar b{display:block;height:100%;width:0;background:var(--holo);box-shadow:0 0 12px var(--holo);transition:width .2s}
 #load p{font:400 12px var(--mono);color:var(--muted);margin:10px 0 0}
+#demo{display:block;margin:14px auto 0;padding:12px 20px;border-radius:99px;border:1px solid var(--rim);background:rgba(255,255,255,.08);font-size:15px;cursor:pointer}
+body.demo{background:radial-gradient(80% 60% at 30% 20%,#1d3448 0%,transparent 60%),radial-gradient(70% 50% at 80% 70%,#2a2238 0%,transparent 60%),linear-gradient(#0b1118,#05070a)}
+body.demo #cam{display:none}
 #err{margin:20px auto 0;max-width:360px;color:var(--warn);font-size:14px;line-height:1.45;text-align:center}
 
 @media (prefers-reduced-motion:reduce){.panel-in,#orb,#orb::after,.caret{animation:none}}
@@ -291,6 +294,7 @@ button{font:inherit;color:inherit}
   </div>
   <div id="load" hidden><div class="bar"><b id="loadBar"></b></div><p id="loadMsg">Starting…</p></div>
   <div id="err" hidden></div>
+  <button id="demo" type="button" hidden>Bina camera demo dekho</button>
 </div>
 
 <script type="module">
@@ -723,7 +727,7 @@ $("#enter").addEventListener("click", async () => {
     await startCamera();
     bar.style.width = "15%";
   } catch (e) {
-    $("#enter").disabled = false; $("#load").hidden = true; err.hidden = false;
+    $("#enter").disabled = false; $("#load").hidden = true; err.hidden = false; $("#demo").hidden = false;
     err.textContent = e.name === "NotAllowedError" ? "Camera ki permission nahi mili. Browser ke address bar mein lock icon dabao, Camera ko Allow karo, phir dobara Enter dabao."
       : e.name === "Insecure" ? "Ye page https link se kholna zaroori hai, tabhi camera chalega."
       : "Camera start nahi hua. Koi aur app camera use kar raha ho to band karo, phir dobara try karo.";
@@ -741,6 +745,12 @@ $("#enter").addEventListener("click", async () => {
     toast("Hand tracking load nahi hua. Touch se type kar sakte ho.");
     $("#hint").textContent = "Touch se bhi type kar sakte ho"; $("#hint").hidden = false;
   }
+});
+$("#demo").addEventListener("click", () => {
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  document.body.classList.add("demo");
+  enterWorld();
+  $("#hint").textContent = "Demo: ungli se screen ghumao, touch se type karo";
 });
 function enterWorld() {
   layout();
