@@ -44,7 +44,7 @@ export function loadTracker(onProgress = () => {}) {
     const files = await FilesetResolver.forVisionTasks(new URL("../vendor/mediapipe/wasm", import.meta.url).href);
     const opts = (delegate) => ({
       baseOptions: { modelAssetBuffer: buf, delegate }, runningMode: "VIDEO", numHands: 1,
-      minHandDetectionConfidence: 0.55, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+      minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4,
     });
     try { landmarker = await HandLandmarker.createFromOptions(files, opts("GPU")); }
     catch { landmarker = await HandLandmarker.createFromOptions(files, opts("CPU")); }

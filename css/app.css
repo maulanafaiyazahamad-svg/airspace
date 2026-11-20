@@ -216,3 +216,11 @@ body:not(.at-home) #homeBg { display: none; }
   border-radius: 8px !important; overflow: hidden !important; box-shadow: 0 0 30px rgba(var(--holo),.3), inset 0 0 30px rgba(var(--holo),.07) !important; }
 .skin-hacker #kbText { justify-content: flex-start; text-align: left; padding: 10px 14px 14px; min-height: 2.4em; font: 500 clamp(22px, 6.2vw, 30px)/1.25 var(--mono); }
 .skin-hacker #kbText .pr { display: inline; color: rgba(var(--holo),1); margin-right: .45em; }
+
+/* hand lamp: grey = loading, red = no hand seen, green = hand locked */
+#bar { align-items: center; }
+#lamp { pointer-events: none; width: 14px; height: 14px; border-radius: 50%; background: #6b7480; box-shadow: 0 0 0 3px rgba(0,0,0,.35); transition: background .15s, box-shadow .15s; }
+#lamp[data-s="off"] { background: #ff3b3b; box-shadow: 0 0 0 3px rgba(0,0,0,.35), 0 0 12px #ff3b3b; }
+#lamp[data-s="on"] { background: #2dff8a; box-shadow: 0 0 0 3px rgba(0,0,0,.35), 0 0 14px #2dff8a; }
+#lamp[data-s="wait"] { animation: lampWait 1s ease-in-out infinite; }
+@keyframes lampWait { 50% { opacity: .35; } }

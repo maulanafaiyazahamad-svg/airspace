@@ -11,7 +11,7 @@ let active = null;
 window.shahzad = modes;
 
 /* camera choice on the home screen */
-try { view.facing = localStorage.getItem("shahzad.cam") || "environment"; } catch {}
+view.facing = "environment";   // always start on the back camera; the flip button switches for this session only
 function paintCam() { document.querySelectorAll("[data-cam]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.cam === view.facing)); }
 document.querySelectorAll("[data-cam]").forEach((b) => b.addEventListener("click", async () => {
   view.facing = b.dataset.cam; paintCam();
@@ -109,5 +109,11 @@ function drawHome(now) {
   function end() { el.classList.add("done"); setTimeout(() => clearInterval(rain), 700); }
 })();
 
-function loop(now) { if (active) active.frame(now); else drawHome(now); requestAnimationFrame(loop); }
+const lamp = $("#lamp");
+function loop(now) {
+  if (active) active.frame(now); else drawHome(now);
+  const st = !tracker.ready ? "wait" : window.__hand.present ? "on" : "off";
+  if (lamp.dataset.s !== st) lamp.dataset.s = st;
+  requestAnimationFrame(loop);
+}
 requestAnimationFrame(loop);
