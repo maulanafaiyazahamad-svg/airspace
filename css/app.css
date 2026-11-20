@@ -170,3 +170,37 @@ body:not(.at-home) #homeBg { display: none; }
 .key svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .key svg .f { fill: currentColor; stroke: none; }
 .key.wide::after { content: ""; width: 38%; height: 3px; border-radius: 3px; background: currentColor; opacity: .55; }
+
+/* v10: the name hits hard; clean keyboard is readable on any background */
+.sp-name { opacity: 0; transform: scale(3.2); filter: blur(10px); transition: none; font: 600 clamp(46px, 15vw, 96px)/1 var(--font); letter-spacing: .08em; margin-right: -.08em;
+  background: linear-gradient(180deg, #ffffff 0%, #e8fff4 45%, #7dffc4 55%, #00ff8c 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: none; filter: drop-shadow(-3px 0 rgba(255,30,90,.9)) drop-shadow(3px 0 rgba(0,240,255,.9)) drop-shadow(0 0 22px rgba(0,255,140,.9)); }
+.sp-name::after { content: attr(data-t); position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, rgba(255,255,255,.95) 50%, transparent 65%);
+  background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sweepTxt 1.6s ease-in-out .9s 1 both; }
+@keyframes sweepTxt { from { background-position: 120% 0; } to { background-position: -40% 0; } }
+#splash.slam .sp-name { animation: slam .38s cubic-bezier(.7,0,.9,.4) forwards; }
+@keyframes slam { 0% { opacity: 0; transform: scale(3.2); } 80% { opacity: 1; transform: scale(.94); } 100% { opacity: 1; transform: scale(1); } }
+#splash.slam { animation: quake .45s linear .36s 1; }
+@keyframes quake { 0%,100% { transform: none; } 15% { transform: translate(-10px, 6px); } 30% { transform: translate(9px, -7px); } 45% { transform: translate(-7px, -4px); } 60% { transform: translate(5px, 5px); } 80% { transform: translate(-3px, 2px); } }
+.sp-ring { position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; border: 2px solid rgba(0,255,140,.9); opacity: 0; box-shadow: 0 0 6px rgba(0,255,140,.9), inset 0 0 6px rgba(0,255,140,.9); }
+#splash.slam .sp-ring { animation: ring2 .9s ease-out .34s 1 both; }
+@keyframes ring2 { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(60); } }
+#splash.slam::before { content: ""; position: absolute; inset: 0; background: #fff; opacity: 0; animation: flash2 .5s ease-out .34s 1 both; pointer-events: none; }
+@keyframes flash2 { 0% { opacity: .85; } 100% { opacity: 0; } }
+
+/* hacker keyboard: the name is big, metallic and lit */
+.skin-hacker #term .name { font: 600 clamp(34px, 11vw, 54px)/1 var(--font); letter-spacing: .1em; margin: 0 -.1em 14px 0; position: relative;
+  background: linear-gradient(180deg, #ffffff 0%, #eafff5 42%, rgb(var(--holo)) 58%, rgba(var(--holo),.75) 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: none; filter: drop-shadow(-2px 0 rgba(255,30,90,.8)) drop-shadow(2px 0 rgba(0,240,255,.8)) drop-shadow(0 0 16px rgba(var(--holo),.9)); }
+.skin-hacker #term .name::after { content: "SHAHZAD"; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 38%, rgba(255,255,255,.95) 50%, transparent 62%);
+  background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sweepTxt 2.4s ease-in-out infinite; }
+
+/* clean keyboard: white text with a dark edge reads on bright walls too */
+.skin-clean #term .name { font: 600 clamp(28px, 9vw, 42px)/1 var(--font); letter-spacing: .14em; margin-right: -.14em; color: #fff;
+  -webkit-text-stroke: 1.2px rgba(0,0,0,.55); paint-order: stroke fill; text-shadow: 0 3px 10px rgba(0,0,0,.85), 0 0 22px rgba(var(--holo),.55); }
+.skin-clean #kbText { color: #fff; -webkit-text-stroke: 1.4px rgba(0,0,0,.6); paint-order: stroke fill; font-weight: 500;
+  text-shadow: 0 3px 8px rgba(0,0,0,.9), 0 0 20px rgba(0,0,0,.55); }
+.skin-clean #kbText .ph { color: rgba(255,255,255,.85); }
+.skin-clean .key { background: rgba(8,12,18,.52); border: 1.5px solid rgba(255,255,255,.85); color: #fff; font-weight: 500;
+  text-shadow: 0 1px 4px rgba(0,0,0,.9); box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+.skin-clean .key.hover { background: rgba(var(--holo),.45); }

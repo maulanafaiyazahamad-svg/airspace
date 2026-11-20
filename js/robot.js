@@ -11,7 +11,7 @@ import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
 import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio } from "./core.js";
 
-const FLOOR = -1.78;
+const FLOOR = -1.78, CAM_Y = -0.05;
 const FIST_IN = 1.32, FIST_OUT = 1.55;   // hand.open thresholds (3D finger reach ratio)
 
 export function createRobot(root, glCanvas, fx) {
@@ -73,7 +73,9 @@ export function createRobot(root, glCanvas, fx) {
     if (!renderer) return;
     renderer.setSize(view.W, view.H, false);
     camera.aspect = view.W / view.H;
-    camera.position.set(0, 0.2, camera.aspect < 0.62 ? 6.3 : 5.2); camera.rotation.set(0, 0, 0); camera.rotation.order = "YXZ";
+    const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const dist = Math.max((3.1 / 0.74) / 2 / tan, (2.0 / 0.9) / (2 * tan * camera.aspect));
+    camera.position.set(0, CAM_Y, dist); camera.rotation.set(0, 0, 0); camera.rotation.order = "YXZ";
     camera.updateProjectionMatrix();
   }
 
@@ -551,7 +553,7 @@ export function createRobot(root, glCanvas, fx) {
     shake = shake * Math.pow(0.03, rdt) + grip * 0.014;
     gyro.yaw += (gyro.ty - gyro.yaw) * Math.min(1, rdt * 14); gyro.pitch += (gyro.tp - gyro.pitch) * Math.min(1, rdt * 14);
     camera.rotation.y = gyro.yaw; camera.rotation.x = gyro.pitch;
-    camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = 0.2 + (Math.random() - 0.5) * shake;
+    camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = CAM_Y + (Math.random() - 0.5) * shake;
     senseRoom(now);
     renderer.render(scene, camera);
 

@@ -95,7 +95,7 @@ function drawHome(now) {
 
 /* ---------- opening: the name assembles out of code ---------- */
 (function splash() {
-  const el = $("#splash"), name = $("#spName"), sub = $("#spSub"), cv = $("#splashRain"), c = cv.getContext("2d");
+  const el = $("#splash"), name = $("#spName"), cv = $("#splashRain"), c = cv.getContext("2d");
   if (/[?&]u=/.test(location.search)) { el.classList.add("done"); return; }
   const G = "01<>/#$%&*+=ABCDEFアカサタナハマヤラワ", r = () => G[(Math.random() * G.length) | 0];
   cv.width = innerWidth; cv.height = innerHeight; const drops = Array.from({ length: Math.ceil(innerWidth / 14) }, () => Math.random() * -innerHeight);
@@ -104,8 +104,8 @@ function drawHome(now) {
     drops.forEach((y, i) => { c.fillText(r(), i * 14, y); drops[i] = y > cv.height + Math.random() * 300 ? 0 : y + 14; });
   }, 40);
   name.textContent = "SHAHZAD";
-  setTimeout(() => { name.classList.add("lit"); setTimeout(() => type("SYSTEM ONLINE"), 900); }, 300);
-  function type(t) { let i = 0; const iv = setInterval(() => { sub.textContent = t.slice(0, ++i) + (i < t.length ? "_" : ""); if (i >= t.length) { clearInterval(iv); setTimeout(end, 650); } }, 45); }
+  setTimeout(() => { el.classList.add("slam"); try { navigator.vibrate && navigator.vibrate(60); } catch {} }, 450);
+  setTimeout(end, 2600);
   function end() { el.classList.add("done"); setTimeout(() => clearInterval(rain), 700); }
 })();
 
