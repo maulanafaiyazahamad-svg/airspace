@@ -102,7 +102,7 @@ function toScreen(lm) {
 
 /* ---------- the hand ---------- */
 const TIPS = [8, 12, 16, 20], MCPS = [5, 9, 13, 17];
-export const hand = {
+export const hand = window.__hand = {
   present: false, seen: 0, detT: 0,
   pts: Array.from({ length: 21 }, () => [0, 0]),
   vel: Array.from({ length: 21 }, () => [0, 0]),
@@ -143,10 +143,13 @@ export const hand = {
     const tr = dist3(G[4], G[5]) / palm3;
     if (this.thumbOut && tr < 0.42) this.thumbOut = false; else if (!this.thumbOut && tr > 0.58) this.thumbOut = true;
     const pr = dist3(G[4], G[8]) / palm3;
-    this.pinch = Math.max(0, Math.min(1, (0.8 - pr) / (0.8 - 0.28)));
+    this.pinch = Math.max(0, Math.min(1, (0.85 - pr) / (0.85 - 0.33)));
     const was = this.pinched;
-    if (!this.pinched && pr < 0.27) this.pinched = true; else if (this.pinched && pr > 0.48) this.pinched = false;
-
+    // easy to start, hard to drop: a light touch of thumb and index counts
+    if (!this.pinched && pr < 0.34 && this.open > 1.2) this.pinched = true; else if (this.pinched && pr > 0.55) this.pinched = false;
+    this.finish(t, first, was);
+  },
+  finish(t, first, was) {
     const e = this.ext, n = e.filter(Boolean).length;
     let g = "other";
     if (this.pinched) g = "pinch";
@@ -164,6 +167,21 @@ export const hand = {
     this.emit("frame", t);
   },
   emit(type, t, extra) { for (const fn of this.listeners) fn(type, t, extra); },
+  // Demo driver: feed a scripted hand pose through exactly the same path as the camera.
+  inject(pose, t = performance.now()) {
+    if (!pose) { if (this.present) { this.reset(); this.emit("lost", t); } return; }
+    const first = !this.present, was = this.pinched;
+    for (let i = 0; i < 21; i++) {
+      const prev = this.pts[i], nx = pose.pts[i][0], ny = pose.pts[i][1], dt = Math.max(1e-3, (t - this.detT) / 1000);
+      this.vel[i][0] = first ? 0 : (nx - prev[0]) / dt; this.vel[i][1] = first ? 0 : (ny - prev[1]) / dt;
+      prev[0] = nx; prev[1] = ny;
+    }
+    this.present = true; this.seen = t; this.detT = t;
+    this.palm = dist(this.pts[0], this.pts[9]) || 1;
+    this.ext = pose.ext.slice(); this.open = pose.open; this.thumbOut = !!pose.thumbOut;
+    this.pinch = pose.pinch; this.pinched = pose.pinched;
+    this.finish(t, first, was);
+  },
   // Position of landmark i right now, pushed forward along its velocity.
   at(i, now = performance.now(), out = [0, 0]) {
     const ahead = Math.min(0.07, Math.max(0, (now - this.detT) / 1000)) + 0.012;
@@ -197,50 +215,95 @@ export function drawHand(ctx, P, rgb = "134,230,255", alpha = 1) {
 }
 
 /* ---------- small shared effects ---------- */
-let ac = null;
-export function audio() { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") ac.resume(); } catch {} return ac; }
+/* ---------- sound: physical-sounding, built from noise and metal resonances ---------- */
+let ac = null, master = null, noiseBuf = null;
+export function audio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createDynamicsCompressor(); master.threshold.value = -10; master.ratio.value = 6; master.connect(ac.destination);
+      noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ac.state === "suspended") ac.resume();
+  } catch {}
+  return ac;
+}
+function noise(t, len, type, freq, q, vol, attack = 0.002) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t); if (q) f.Q.value = q;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  s.connect(f).connect(g).connect(master); s.start(t, Math.random()); s.stop(t + len + 0.05);
+  return f;
+}
+function ping(t, freq, len, vol) {
+  // a struck metal plate: a few inharmonic partials that die away
+  for (const [m, a] of [[1, 1], [2.76, 0.5], [5.4, 0.25], [8.9, 0.12]]) {
+    const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = freq * m;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * a, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + len / m ** 0.4);
+    o.connect(g).connect(master); o.start(t); o.stop(t + len + 0.05);
+  }
+}
+function thump(t, from, to, len, vol) {
+  const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine";
+  o.frequency.setValueAtTime(from, t); o.frequency.exponentialRampToValueAtTime(to, t + len);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g).connect(master); o.start(t); o.stop(t + len + 0.05);
+}
+/** Key press: a soft mechanical click. */
+export function keyClick() {
+  if (!ac) return; const t = ac.currentTime;
+  noise(t, 0.018, "bandpass", 3800 + Math.random() * 600, 1.2, 0.35);
+  noise(t + 0.004, 0.04, "lowpass", 700, 0, 0.25);
+}
+/** Small UI confirmation (switch, grab). */
 export function tick(freq = 2000, vol = 0.14, len = 0.06) {
-  if (!ac) return;
-  const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
-  o.type = "triangle"; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 0.4, t + len);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + len + 0.02);
+  if (!ac) return; const t = ac.currentTime;
+  noise(t, Math.min(0.05, len), "bandpass", Math.min(6000, freq * 1.5), 2, vol * 1.6);
 }
 export function boom(vol = 0.5, len = 0.6) {
-  if (!ac) return;
-  const t = ac.currentTime, n = Math.floor(ac.sampleRate * len), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.2);
-  const s = ac.createBufferSource(); s.buffer = b;
-  const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(140, t + len);
-  const g = ac.createGain(); g.gain.value = vol;
-  s.connect(f).connect(g).connect(ac.destination); s.start(t);
+  if (!ac) return; const t = ac.currentTime;
+  thump(t, 110, 32, len * 0.9, vol * 1.3);
+  const f = noise(t, len, "lowpass", 2600, 0, vol); f.frequency.exponentialRampToValueAtTime(120, t + len);
 }
+/** Armour tearing apart: impact, metal plates, falling grit. */
 export function crunch(power = 1) {
-  if (!ac) return;
-  const t0 = ac.currentTime;
-  boom(0.7 * power, 1.2);
-  // metal shards: short bright pings at random pitches
-  for (let k = 0; k < 9; k++) {
-    const t = t0 + Math.random() * 0.22, o = ac.createOscillator(), g = ac.createGain();
-    o.type = k % 2 ? "square" : "triangle"; o.frequency.setValueAtTime(400 + Math.random() * 2600, t);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09 * power, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08 + Math.random() * 0.2);
-    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.35);
-  }
-  // crackle
-  const n = Math.floor(ac.sampleRate * 0.35), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
-  for (let i = 0; i < n; i++) d[i] = Math.random() < 0.08 ? (Math.random() * 2 - 1) * Math.pow(1 - i / n, 1.5) : 0;
-  const s = ac.createBufferSource(); s.buffer = b; const f = ac.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 1800;
-  const g = ac.createGain(); g.gain.value = 0.9 * power; s.connect(f).connect(g).connect(ac.destination); s.start(t0);
+  if (!ac) return; const t = ac.currentTime;
+  boom(0.65 * power, 0.9 + power * 0.5);
+  noise(t, 0.12, "highpass", 2500, 0, 0.5 * power);
+  for (let k = 0; k < 4 + power * 6; k++) ping(t + Math.random() * 0.25, 500 + Math.random() * 1800, 0.25 + Math.random() * 0.4, 0.05 * power);
+  for (let k = 0; k < 10 * power; k++) noise(t + 0.15 + Math.random() * 0.8, 0.02, "bandpass", 3000 + Math.random() * 4000, 3, 0.15);
 }
-export function clink() { tick(2200 + Math.random() * 2500, 0.035, 0.05); }
+/** A piece landing on the floor. */
+export function clink() { if (!ac) return; ping(ac.currentTime, 900 + Math.random() * 1600, 0.25, 0.04); }
+/** Straining metal while you squeeze. */
 export function rumble() {
   if (!ac) return { set() {}, stop() {} };
-  const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
-  o.type = "sawtooth"; o.frequency.value = 42; f.type = "lowpass"; f.frequency.value = 160; g.gain.value = 0;
-  o.connect(f).connect(g).connect(ac.destination); o.start();
+  const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 180; f.Q.value = 4;
+  const g = ac.createGain(); g.gain.value = 0;
+  s.connect(f).connect(g).connect(master); s.start();
   return {
-    set(k) { const t = ac.currentTime; g.gain.setTargetAtTime(0.32 * k, t, 0.05); o.frequency.setTargetAtTime(42 + 50 * k, t, 0.05); f.frequency.setTargetAtTime(160 + 500 * k, t, 0.05); },
-    stop() { const t = ac.currentTime; g.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => { try { o.stop(); } catch {} }, 300); },
+    set(k) { const t = ac.currentTime; g.gain.setTargetAtTime(0.9 * k, t, 0.05); f.frequency.setTargetAtTime(120 + 420 * k + Math.random() * 60, t, 0.04); },
+    stop() { const t = ac.currentTime; g.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => { try { s.stop(); } catch {} }, 300); },
   };
+}
+/** A continuous energy hiss (laser, energy ball). */
+export function hum() {
+  if (!ac) return { set() {}, stop() {} };
+  const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1200; f.Q.value = 6;
+  const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = 95; const og = ac.createGain(); og.gain.value = 0;
+  const g = ac.createGain(); g.gain.value = 0;
+  s.connect(f).connect(g).connect(master); o.connect(og).connect(master); s.start(); o.start();
+  return {
+    set(k) { const t = ac.currentTime; g.gain.setTargetAtTime(0.35 * k, t, 0.04); og.gain.setTargetAtTime(0.12 * k, t, 0.04); f.frequency.setTargetAtTime(900 + 900 * k + Math.random() * 200, t, 0.03); },
+    stop() { const t = ac.currentTime; g.gain.setTargetAtTime(0, t, 0.03); og.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => { try { s.stop(); o.stop(); } catch {} }, 300); },
+  };
+}
+/** Whoosh of something flying past. */
+export function whoosh(vol = 0.4, len = 0.5) {
+  if (!ac) return; const t = ac.currentTime;
+  const f = noise(t, len, "bandpass", 400, 1.5, vol, len * 0.4); f.frequency.exponentialRampToValueAtTime(2400, t + len * 0.5); f.frequency.exponentialRampToValueAtTime(600, t + len);
 }
 export function buzz(ms = 10) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }

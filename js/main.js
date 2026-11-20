@@ -1,11 +1,12 @@
 import { view, startCamera, cameraOn, loadTracker, tracker, audio } from "./core.js";
 import { createKeyboard } from "./keyboard.js";
 import { createRobot } from "./robot.js";
+import { createPower } from "./power.js";
 import { VERSION } from "./version.js";
 
 const $ = (s) => document.querySelector(s);
 const fx = $("#fx");
-const modes = { kb: createKeyboard($("#kbMode"), fx), robot: createRobot($("#rbMode"), $("#gl"), fx) };
+const modes = { kb: createKeyboard($("#kbMode"), fx), robot: createRobot($("#rbMode"), $("#gl"), fx), power: createPower($("#pwMode"), fx) };
 let active = null;
 window.shahzad = modes;
 
@@ -38,14 +39,16 @@ async function go(name) {
   document.body.classList.remove("at-home");
   $("#home").hidden = true; $("#bar").hidden = false;
   active?.exit(); active = modes[name]; active.enter();
-  if (!tracker.ready) {
+  if (!tracker.ready && !window.__demo) {
     const box = $("#loading"), bar = $("#loadBar"); box.hidden = false;
     loadTracker((f) => { bar.style.width = Math.round(f * 100) + "%"; })
       .then(() => { box.classList.add("done"); setTimeout(() => (box.hidden = true), 500); })
       .catch(() => { $("#loadMsg").textContent = "Haath pehchanne wala system load nahi hua. App band karke dobara kholo."; });
   }
 }
+let pendingUpdate = false;
 function home() {
+  if (pendingUpdate) { location.replace(location.pathname + "?u=" + Date.now()); return; }
   active?.exit(); active = null;
   document.body.classList.add("at-home");
   $("#home").hidden = false; $("#bar").hidden = true;
@@ -67,9 +70,47 @@ setInterval(async () => {
   try {
     const r = await fetch("js/version.js?t=" + Date.now(), { cache: "no-store" });
     const m = (await r.text()).match(/VERSION = "([^"]+)"/);
-    if (m && m[1] !== VERSION) location.replace(location.pathname + "?u=" + Date.now());
+    if (m && m[1] !== VERSION) { if (active) pendingUpdate = true; else location.replace(location.pathname + "?u=" + Date.now()); }
   } catch {}
 }, 30000);
 
-function loop(now) { active?.frame(now); requestAnimationFrame(loop); }
+/* ---------- home background: a slow drifting network of light ---------- */
+const hb = $("#homeBg"), hctx = hb.getContext("2d");
+const nodes = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), vx: (Math.random() - 0.5) * 0.02, vy: (Math.random() - 0.5) * 0.02 }));
+let hbLast = performance.now();
+function drawHome(now) {
+  const dt = Math.min(0.05, (now - hbLast) / 1000); hbLast = now;
+  const W = innerWidth, H = innerHeight;
+  if (hb.width !== W) { hb.width = W; hb.height = H; }
+  hctx.clearRect(0, 0, W, H);
+  for (const n of nodes) { n.x = (n.x + n.vx * dt + 1) % 1; n.y = (n.y + n.vy * dt + 1) % 1; }
+  hctx.lineWidth = 1;
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+    const a = nodes[i], b = nodes[j], dx = (a.x - b.x) * W, dy = (a.y - b.y) * H, dd = Math.hypot(dx, dy);
+    if (dd < 130) { hctx.strokeStyle = `rgba(95,230,255,${(1 - dd / 130) * 0.25})`; hctx.beginPath(); hctx.moveTo(a.x * W, a.y * H); hctx.lineTo(b.x * W, b.y * H); hctx.stroke(); }
+  }
+  hctx.fillStyle = "rgba(160,240,255,.8)";
+  for (const n of nodes) { hctx.beginPath(); hctx.arc(n.x * W, n.y * H, 1.6, 0, 6.283); hctx.fill(); }
+}
+
+/* ---------- opening: the name assembles out of code ---------- */
+(function splash() {
+  const el = $("#splash"), name = $("#spName"), sub = $("#spSub"), cv = $("#splashRain"), c = cv.getContext("2d");
+  if (/[?&]u=/.test(location.search)) { el.classList.add("done"); return; }
+  const G = "01<>/#$%&*+=ABCDEFアカサタナハマヤラワ", r = () => G[(Math.random() * G.length) | 0];
+  cv.width = innerWidth; cv.height = innerHeight; const drops = Array.from({ length: Math.ceil(innerWidth / 14) }, () => Math.random() * -innerHeight);
+  const rain = setInterval(() => {
+    c.fillStyle = "rgba(0,0,0,.14)"; c.fillRect(0, 0, cv.width, cv.height); c.fillStyle = "#00ff8c"; c.font = "14px Geist Mono, monospace";
+    drops.forEach((y, i) => { c.fillText(r(), i * 14, y); drops[i] = y > cv.height + Math.random() * 300 ? 0 : y + 14; });
+  }, 40);
+  const T = "SHAHZAD"; let f = 0;
+  const sc = setInterval(() => {
+    f++; name.textContent = [...T].map((ch, i) => (f > 8 + i * 3 ? ch : r())).join("");
+    if (f === 8 + T.length * 3) { clearInterval(sc); name.classList.add("glitch"); type("SYSTEM ONLINE"); }
+  }, 45);
+  function type(t) { let i = 0; const iv = setInterval(() => { sub.textContent = t.slice(0, ++i) + (i < t.length ? "_" : ""); if (i >= t.length) { clearInterval(iv); setTimeout(end, 650); } }, 45); }
+  function end() { el.classList.add("done"); setTimeout(() => clearInterval(rain), 700); }
+})();
+
+function loop(now) { if (active) active.frame(now); else drawHome(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);

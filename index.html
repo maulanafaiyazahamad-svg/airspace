@@ -17,17 +17,16 @@
 <canvas id="gl" hidden></canvas>
 
 <!-- Air keyboard -->
-<div id="kbMode" class="mode hack" hidden>
+<div id="kbMode" class="mode skin-hacker" hidden>
   <canvas id="rain"></canvas>
-  <div id="hud"><span id="hudL">AIR-TYPE // LINK SECURE</span><span id="hudR">TRK -- FPS</span></div>
-  <div id="kbTop">
-    <div id="term">
-      <div class="tbar"><i></i><i></i><i></i><span>root@shahzad:~/air-type</span></div>
-      <div id="kbText"></div>
-    </div>
+  <div class="scan"></div>
+  <div id="hud"><span id="hudL">SHAHZAD://AIR-TYPE</span><span id="hudR">TRK -- FPS</span></div>
+  <div id="term">
+    <div class="thead"><div class="name" id="kbName">SHAHZAD</div><div class="sub">NEURAL AIR-TYPE · LINK SECURE</div></div>
+    <div id="kbText"></div>
   </div>
   <div id="kbStage">
-    <div id="kbBeam"></div>
+    <div id="kbShadow"></div>
     <div id="kb"></div>
   </div>
 </div>
@@ -36,6 +35,9 @@
 <div id="rbMode" class="mode" hidden>
   <div id="rbBlast"></div>
 </div>
+
+<!-- Shakti -->
+<div id="pwMode" class="mode" hidden></div>
 
 <canvas id="fx"></canvas>
 
@@ -49,12 +51,17 @@
   <div class="bar"><b id="loadBar"></b></div>
 </div>
 
+<canvas id="homeBg"></canvas>
 <section id="home">
   <div class="brand">SHAHZAD</div>
   <h1>Kya chalana hai?</h1>
   <button class="card" type="button" data-go="kb">
     <svg viewBox="0 0 48 48"><rect x="4" y="12" width="40" height="24" rx="4"/><path d="M11 19h2M17 19h2M23 19h2M29 19h2M35 19h2M11 25h2M17 25h2M23 25h2M29 25h2M35 25h2M15 30h18"/></svg>
     <span><b>Air Keyboard</b><small>Hawa mein chutki se type karo</small></span>
+  </button>
+  <button class="card" type="button" data-go="power">
+    <svg viewBox="0 0 48 48"><path d="M27 4L12 27h10l-3 17 17-25H25z"/></svg>
+    <span><b>Shakti</b><small>Haath se bijli, aag ka gola, hawa mein roshni</small></span>
   </button>
   <button class="card" type="button" data-go="robot">
     <svg viewBox="0 0 48 48"><rect x="13" y="6" width="22" height="18" rx="5"/><path d="M18 15h12"/><rect x="10" y="27" width="28" height="15" rx="4"/><circle cx="24" cy="34" r="3"/><path d="M10 31H5v8M38 31h5v8"/></svg>
@@ -68,6 +75,8 @@
   <p id="err" hidden></p>
   <div class="ver"><span id="ver"></span><button id="refresh" type="button">↻ Update lo</button></div>
 </section>
+
+<div id="splash"><canvas id="splashRain"></canvas><div class="sp-name" id="spName">SHAHZAD</div><div class="sp-sub" id="spSub"></div><div class="sp-line"></div></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

@@ -11,7 +11,7 @@ import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
 import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio } from "./core.js";
 
-const FLOOR = -1.5;
+const FLOOR = -1.78;
 const FIST_IN = 1.32, FIST_OUT = 1.55;   // hand.open thresholds (3D finger reach ratio)
 
 export function createRobot(root, glCanvas, fx) {
@@ -20,6 +20,30 @@ export function createRobot(root, glCanvas, fx) {
   let renderer, scene, camera, rig, body, parts = {}, proxies = [], debris = [], tweens = [], flames = [], arcs = [];
   let sparks, flash, wave, glowMat, eyeMat, reactorLight, ring, inited = false, last = performance.now(), TOTAL = 1, intactCount = 0;
   let yawT = 0, pitchT = 0, drag = null, carry = null, aim = null, charge = 0, cooldown = 0, wasPinch = false;
+  let openSince = 0, armedAt = 0, pointN = 0, vN = 0, dentT = 0;
+  // phone orientation, so the suit stays put in the room while the phone moves
+  const gyro = { on: false, a0: 0, b0: 0, yaw: 0, pitch: 0, ty: 0, tp: 0 };
+  addEventListener("deviceorientation", (e) => {
+    if (e.alpha == null) return;
+    if (!gyro.on) { gyro.on = true; gyro.a0 = e.alpha; gyro.b0 = e.beta; }
+    let da = e.alpha - gyro.a0; da = ((da + 540) % 360) - 180;
+    const sgn = view.facing === "user" ? -1 : 1;
+    gyro.ty = THREE.MathUtils.degToRad(da) * sgn; gyro.tp = THREE.MathUtils.degToRad(e.beta - gyro.b0) * sgn;
+  });
+  // match the suit's lighting to the room the camera sees
+  const probe = document.createElement("canvas"); probe.width = probe.height = 8; const pctx = probe.getContext("2d", { willReadFrequently: true });
+  let probeT = 0, hemi = null, keyL = null;
+  function senseRoom(now) {
+    if (now - probeT < 500 || !hemi) return; probeT = now;
+    const v = document.getElementById("cam"); if (!v.videoWidth) return;
+    try {
+      pctx.drawImage(v, 0, 0, 8, 8); const d = pctx.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      const n = d.length / 4; r /= n * 255; g /= n * 255; b /= n * 255; const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+      hemi.color.setRGB(0.6 + r * 0.5, 0.6 + g * 0.5, 0.6 + b * 0.5); hemi.intensity = 0.3 + lum * 1.1;
+      keyL.intensity = 1.6 + lum * 1.8; renderer.toneMappingExposure = 0.85 + lum * 0.55;
+    } catch {}
+  }
   let grip = 0, gripOn = false, gripSeen = 0, lostAt = 0, rum = null, laserSnd = null;
   let timeScale = 1, slowHold = 0, shake = 0, lastBreak = 0, lastClink = 0, punch = 0;
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), tv = new THREE.Vector3(), tv2 = new THREE.Vector3();
@@ -34,8 +58,8 @@ export function createRobot(root, glCanvas, fx) {
     scene = new THREE.Scene();
     scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture;
     camera = new THREE.PerspectiveCamera(40, 1, 0.1, 60);
-    scene.add(new THREE.HemisphereLight(0xd6e6ff, 0x140f0c, 0.55));
-    const key = new THREE.DirectionalLight(0xfff3e6, 2.6); key.position.set(2.5, 4, 5); scene.add(key);
+    hemi = new THREE.HemisphereLight(0xd6e6ff, 0x140f0c, 0.55); scene.add(hemi);
+    const key = new THREE.DirectionalLight(0xfff3e6, 2.6); key.position.set(2.5, 4, 5); scene.add(key); keyL = key;
     const rimC = new THREE.DirectionalLight(0x5fe6ff, 3.2); rimC.position.set(-4, 2.5, -3); scene.add(rimC);
     const rimR = new THREE.DirectionalLight(0xff4a3a, 1.6); rimR.position.set(4, 1, -4); scene.add(rimR);
     rig = new THREE.Group(); scene.add(rig);
@@ -49,7 +73,7 @@ export function createRobot(root, glCanvas, fx) {
     if (!renderer) return;
     renderer.setSize(view.W, view.H, false);
     camera.aspect = view.W / view.H;
-    camera.position.set(0, 0.3, camera.aspect < 0.62 ? 5.5 : 4.6); camera.lookAt(0, 0.2, 0);
+    camera.position.set(0, 0.2, camera.aspect < 0.62 ? 6.3 : 5.2); camera.rotation.set(0, 0, 0); camera.rotation.order = "YXZ";
     camera.updateProjectionMatrix();
   }
 
@@ -80,78 +104,81 @@ export function createRobot(root, glCanvas, fx) {
     };
     const sub = (parent, x, y, z, rx = 0) => { const o = new THREE.Group(); o.position.set(x, y, z); o.rotation.x = rx; parent.add(o); return o; };
 
+    // A heavy, broad-shouldered siege suit: thick plating, a single slit visor, piston legs.
     // torso
     const T = part("torso", 0, 0, 0);
-    add(T, T, TAPER(0.2, 0.17, 0.2, 6), "armor", 0, -0.02, 0, 0, Math.PI / 6, 0, [1, 1, 0.75]);
-    add(T, T, RB(0.14, 0.15, 0.06), "plate", 0, -0.06, 0.13, -0.15);
-    add(T, T, TAPER(0.16, 0.19, 0.17), "dark", 0, 0.16, 0);
-    for (const y of [0.13, 0.21, 0.29]) for (const s of [-1, 1]) add(T, T, RB(0.1, 0.065, 0.045, 0.015), "plate", s * 0.056, y, 0.15);
-    add(T, T, TAPER(0.37, 0.24, 0.44, 6), "armor", 0, 0.56, 0, 0, Math.PI / 6, 0, [1, 1, 0.62]);
-    for (const s of [-1, 1]) add(T, T, RB(0.25, 0.17, 0.07, 0.03), "plate", s * 0.14, 0.63, 0.19, 0, -s * 0.28, s * 0.08);
-    const reactor = add(T, T, new THREE.CylinderGeometry(0.07, 0.07, 0.04, 6), "glow", 0, 0.54, 0.235, Math.PI / 2);
-    add(T, T, new THREE.TorusGeometry(0.095, 0.017, 8, 6), "plate", 0, 0.54, 0.245, 0, 0, Math.PI / 6);
-    add(T, T, TAPER(0.14, 0.2, 0.07), "dark", 0, 0.8, 0);
-    add(T, T, RB(0.44, 0.36, 0.1, 0.04), "dark", 0, 0.56, -0.2);
+    add(T, T, RB(0.5, 0.24, 0.34, 0.06), "armor", 0, -0.02, 0);
+    add(T, T, RB(0.2, 0.18, 0.08, 0.03), "plate", 0, -0.06, 0.17, -0.12);
+    add(T, T, TAPER(0.2, 0.24, 0.2), "dark", 0, 0.18, 0);
+    for (const y of [0.14, 0.24]) for (const s of [-1, 1]) add(T, T, RB(0.14, 0.085, 0.06, 0.02), "plate", s * 0.08, y, 0.19);
+    add(T, T, RB(0.86, 0.52, 0.48, 0.1), "armor", 0, 0.6, 0);
+    add(T, T, RB(0.6, 0.3, 0.1, 0.04), "plate", 0, 0.66, 0.24);
+    for (const s of [-1, 1]) add(T, T, RB(0.12, 0.34, 0.1, 0.03), "plate", s * 0.36, 0.58, 0.22, 0, -s * 0.35, 0);
+    const reactor = add(T, T, new THREE.CylinderGeometry(0.085, 0.085, 0.05, 6), "glow", 0, 0.6, 0.3, Math.PI / 2);
+    add(T, T, new THREE.TorusGeometry(0.115, 0.022, 8, 6), "dark", 0, 0.6, 0.305, 0, 0, Math.PI / 6);
+    add(T, T, RB(0.34, 0.1, 0.32, 0.03), "dark", 0, 0.9, 0);
+    add(T, T, RB(0.62, 0.46, 0.16, 0.05), "dark", 0, 0.6, -0.3);
     for (const s of [-1, 1]) {
-      add(T, T, RB(0.022, 0.24, 0.02, 0.008), "glow", s * 0.09, 0.56, -0.26);
-      add(T, T, RB(0.02, 0.18, 0.02, 0.008), "glow", s * 0.29, 0.5, 0.05, 0, 0, s * 0.15);
+      add(T, T, TAPER(0.06, 0.07, 0.36, 12), "dark", s * 0.16, 0.66, -0.42);
+      add(T, T, RB(0.03, 0.3, 0.02, 0.01), "glow", s * 0.16, 0.66, -0.495);
+      add(T, T, RB(0.025, 0.2, 0.02, 0.01), "glow", s * 0.42, 0.52, 0.12, 0, 0, s * 0.12);
     }
-    halo(reactor, 0.9, 0x6fe9ff);
-    reactorLight = new THREE.PointLight(0x5fe6ff, 1.4, 2.4); reactorLight.position.set(0, 0.54, 0.5); T.add(reactorLight);
+    halo(reactor, 1.1, 0x6fe9ff);
+    reactorLight = new THREE.PointLight(0x5fe6ff, 1.6, 2.6); reactorLight.position.set(0, 0.6, 0.6); T.add(reactorLight);
 
-    // head
-    const H = part("head", 0, 0.86, 0);
-    add(H, H, TAPER(0.065, 0.08, 0.1), "dark", 0, 0.03, 0);
-    add(H, H, new THREE.SphereGeometry(0.15, 28, 20), "armor", 0, 0.22, 0, 0, 0, 0, [0.95, 1.12, 1.05]);
-    add(H, H, RB(0.2, 0.21, 0.06, 0.04), "plate", 0, 0.2, 0.12);
-    for (const s of [-1, 1]) {
-      const eye = add(H, H, RB(0.068, 0.019, 0.012, 0.006), "eye", s * 0.047, 0.245, 0.152, 0, 0, -s * 0.2);
-      halo(eye, 0.5, 0xff3322, 0.9);
-      add(H, H, RB(0.03, 0.1, 0.12, 0.012), "plate", s * 0.13, 0.2, 0.05);
-    }
-    add(H, H, RB(0.15, 0.06, 0.05, 0.02), "dark", 0, 0.11, 0.125);
-    add(H, H, RB(0.03, 0.06, 0.22, 0.012), "plate", 0, 0.37, 0);
+    // head: low armoured helm with one slit visor, sunk between the shoulders
+    const H = part("head", 0, 0.95, 0);
+    add(H, H, TAPER(0.09, 0.11, 0.08), "dark", 0, 0.02, 0);
+    add(H, H, RB(0.3, 0.26, 0.32, 0.1), "armor", 0, 0.17, 0);
+    add(H, H, RB(0.26, 0.12, 0.08, 0.03), "plate", 0, 0.1, 0.15);
+    const visor = add(H, H, RB(0.24, 0.035, 0.02, 0.01), "eye", 0, 0.2, 0.162);
+    halo(visor, 1.4, 0xff3322, 0.85);
+    add(H, H, RB(0.34, 0.05, 0.3, 0.02), "plate", 0, 0.3, -0.01);
+    for (const s of [-1, 1]) add(H, H, RB(0.05, 0.16, 0.2, 0.02), "dark", s * 0.17, 0.16, 0);
 
-    // arms
+    // arms: huge shoulder blocks, thick forearms, heavy fists
     for (const s of [-1, 1]) {
-      const A = part(s < 0 ? "armR" : "armL", s * 0.44, 0.72, 0);
-      A.rotation.z = s * 0.12; A.userData.home.rot = A.rotation.clone();
-      add(A, A, new THREE.SphereGeometry(0.1, 20, 14), "dark", 0, 0, 0);
-      add(A, A, new THREE.SphereGeometry(0.15, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), "plate", s * 0.03, 0.03, 0, 0, 0, -s * 0.35, [1, 0.8, 1.05]);
-      add(A, A, CAP(0.075, 0.22), "armor", 0, -0.22, 0);
-      add(A, A, RB(0.1, 0.16, 0.05, 0.02), "plate", 0, -0.22, 0.07);
-      const el = sub(A, 0, -0.43, 0, -0.25); A.userData.elbow = el;
-      add(A, el, new THREE.SphereGeometry(0.07, 16, 12), "dark", 0, 0, 0);
-      add(A, el, TAPER(0.09, 0.07, 0.3), "armor", 0, -0.18, 0);
-      add(A, el, RB(0.17, 0.14, 0.18, 0.04), "plate", 0, -0.1, 0);
-      add(A, el, RB(0.02, 0.16, 0.012, 0.006), "glow", 0, -0.2, 0.085);
-      const hn = sub(el, 0, -0.38, 0);
-      add(A, hn, RB(0.11, 0.12, 0.1, 0.03), "dark", 0, 0, 0);
-      add(A, hn, RB(0.12, 0.04, 0.11, 0.015), "plate", 0, -0.05, 0);
-      const pal = add(A, hn, new THREE.CylinderGeometry(0.032, 0.032, 0.012, 18), "glow", -s * 0.057, 0, 0, 0, 0, Math.PI / 2);
-      halo(pal, 0.9, 0x6fe9ff, 0.5);
+      const A = part(s < 0 ? "armR" : "armL", s * 0.58, 0.76, 0);
+      A.rotation.z = s * 0.1; A.userData.home.rot = A.rotation.clone();
+      add(A, A, new THREE.SphereGeometry(0.14, 22, 16), "dark", 0, 0, 0);
+      add(A, A, RB(0.36, 0.26, 0.44, 0.1), "armor", s * 0.06, 0.08, 0, 0, 0, -s * 0.18);
+      add(A, A, RB(0.3, 0.06, 0.4, 0.02), "plate", s * 0.07, 0.23, 0, 0, 0, -s * 0.18);
+      add(A, A, RB(0.04, 0.16, 0.3, 0.01), "glow", s * 0.24, 0.06, 0, 0, 0, -s * 0.18);
+      add(A, A, CAP(0.105, 0.22), "armor", 0, -0.27, 0);
+      add(A, A, RB(0.15, 0.2, 0.06, 0.03), "plate", 0, -0.26, 0.09);
+      const el = sub(A, 0, -0.5, 0, -0.22); A.userData.elbow = el;
+      add(A, el, new THREE.SphereGeometry(0.1, 18, 12), "dark", 0, 0, 0);
+      add(A, el, RB(0.25, 0.36, 0.26, 0.07), "armor", 0, -0.2, 0);
+      add(A, el, RB(0.27, 0.1, 0.28, 0.03), "plate", 0, -0.08, 0);
+      add(A, el, RB(0.03, 0.22, 0.015, 0.008), "glow", 0, -0.22, 0.135);
+      const hn = sub(el, 0, -0.45, 0);
+      add(A, hn, RB(0.2, 0.17, 0.18, 0.05), "dark", 0, 0, 0);
+      add(A, hn, RB(0.21, 0.06, 0.19, 0.02), "plate", 0, -0.075, 0);
+      const pal = add(A, hn, new THREE.CylinderGeometry(0.045, 0.045, 0.015, 18), "glow", -s * 0.102, 0, 0, 0, 0, Math.PI / 2);
+      halo(pal, 1.1, 0x6fe9ff, 0.5);
       A.userData.palm = pal;
     }
-    // legs on boot thrusters
+    // legs: thick thighs, piston shins, heavy boots with thrusters
     for (const s of [-1, 1]) {
-      const L = part(s < 0 ? "legR" : "legL", s * 0.13, -0.1, 0);
-      add(L, L, new THREE.SphereGeometry(0.09, 18, 12), "dark", 0, 0, 0);
-      add(L, L, CAP(0.1, 0.28), "armor", 0, -0.24, 0);
-      add(L, L, RB(0.15, 0.22, 0.05, 0.02), "plate", 0, -0.22, 0.1);
-      const kn = sub(L, 0, -0.48, 0);
-      add(L, kn, new THREE.SphereGeometry(0.075, 16, 12), "dark", 0, 0, 0);
-      add(L, kn, RB(0.12, 0.1, 0.07, 0.03), "plate", 0, 0, 0.08);
-      add(L, kn, TAPER(0.085, 0.07, 0.36), "armor", 0, -0.22, 0);
-      add(L, kn, RB(0.11, 0.26, 0.04, 0.02), "plate", 0, -0.2, 0.08);
-      add(L, kn, RB(0.16, 0.12, 0.27, 0.04), "armor", 0, -0.44, 0.03);
-      add(L, kn, RB(0.14, 0.06, 0.08, 0.02), "plate", 0, -0.47, 0.17);
-      const noz = add(L, kn, TAPER(0.05, 0.065, 0.05), "dark", 0, -0.52, -0.01);
-      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.42, 16, 1, true),
+      const L = part(s < 0 ? "legR" : "legL", s * 0.17, -0.12, 0);
+      add(L, L, new THREE.SphereGeometry(0.12, 18, 12), "dark", 0, 0, 0);
+      add(L, L, RB(0.24, 0.4, 0.28, 0.07), "armor", 0, -0.25, 0);
+      add(L, L, RB(0.2, 0.26, 0.06, 0.03), "plate", 0, -0.22, 0.14);
+      const kn = sub(L, 0, -0.5, 0);
+      add(L, kn, new THREE.SphereGeometry(0.1, 16, 12), "dark", 0, 0, 0);
+      add(L, kn, RB(0.18, 0.14, 0.1, 0.04), "plate", 0, 0, 0.11);
+      add(L, kn, RB(0.22, 0.4, 0.26, 0.07), "armor", 0, -0.24, 0);
+      add(L, kn, TAPER(0.03, 0.03, 0.3, 10), "plate", 0.06 * s, -0.22, -0.15);
+      add(L, kn, RB(0.04, 0.26, 0.015, 0.008), "glow", 0, -0.22, 0.135);
+      add(L, kn, RB(0.26, 0.14, 0.38, 0.05), "armor", 0, -0.48, 0.05);
+      add(L, kn, RB(0.24, 0.07, 0.12, 0.03), "plate", 0, -0.51, 0.22);
+      const noz = add(L, kn, TAPER(0.07, 0.09, 0.06), "dark", 0, -0.57, -0.01);
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.5, 16, 1, true),
         new THREE.MeshBasicMaterial({ color: 0x9ff1ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      flame.rotation.x = Math.PI; flame.position.y = -0.23; noz.add(flame);
-      const core = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.24, 12, 1, true), flame.material.clone()); core.material.color.setHex(0xffffff);
-      core.rotation.x = Math.PI; core.position.y = -0.14; noz.add(core);
-      halo(noz, 1.1, 0x6fe9ff, 0.8);
+      flame.rotation.x = Math.PI; flame.position.y = -0.28; noz.add(flame);
+      const core = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.3, 12, 1, true), flame.material.clone()); core.material.color.setHex(0xffffff);
+      core.rotation.x = Math.PI; core.position.y = -0.17; noz.add(core);
+      halo(noz, 1.4, 0x6fe9ff, 0.8);
       L.userData.flames.push(flame, core); flames.push(flame, core); L.userData.nozzle = noz;
     }
     // generous invisible hit zones, one per part
@@ -278,7 +305,7 @@ export function createRobot(root, glCanvas, fx) {
   }
   function breakPart(p, at, burn = false) {
     if (p.userData.broken) return;
-    if (p.userData.name === "torso") return shatter(1, at);
+    if (p.userData.name === "torso") return;   // the core only goes down with the fist burst
     markBroken(p);
     shards(p, 30, at, 3.6);
     const origin = at.clone().add(new THREE.Vector3(0, -0.1, -0.35));
@@ -372,22 +399,27 @@ export function createRobot(root, glCanvas, fx) {
 
     const P = hand.present ? predicted(now) : null;
     const e = hand.ext, o = hand.open;
+    const nExt = e.filter(Boolean).length;
     const fistNow = !!P && (o < FIST_IN || (gripOn && o < FIST_OUT));
     const pinchNow = !!P && hand.pinched && !fistNow;
-    const vNow = !!P && e[0] && e[1] && !e[2] && !e[3] && !pinchNow && !fistNow;
-    const pointNow = !!P && e[0] && !e[1] && !pinchNow && !fistNow;
+    // a gesture has to hold for a few frames before it acts, so passing shapes do nothing
+    pointN = P && e[0] && !e[1] && !e[2] && !pinchNow && !fistNow ? pointN + 1 : 0;
+    vN = P && e[0] && e[1] && !e[2] && !e[3] && !pinchNow && !fistNow ? vN + 1 : 0;
+    const pointNow = pointN > 4, vNow = vN > 4;
+    // step 1 of the burst: a clearly open hand arms it
+    if (P && nExt === 4 && o > 1.7) { if (!openSince) openSince = now; if (now - openSince > 180) armedAt = now; } else openSince = 0;
     cooldown -= rdt;
 
     /* --- open, fist, open: lock on, crush, burst. Never aims, never misses. --- */
     if (P) lostAt = 0; else if (!lostAt) lostAt = now;
-    if (fistNow && intactCount && !carry) {
-      if (!gripOn) { gripOn = true; grip = 0; rum = rumble(); tick(140, 0.25, 0.3); }
+    if (fistNow && intactCount && !carry && (gripOn || now - armedAt < 1500)) {
+      if (!gripOn) { gripOn = true; grip = 0; rum = rumble(); }
       gripSeen = now; grip = Math.min(1, grip + rdt / 0.42);
       if (Math.random() < grip * 0.6) buzz(14);
     } else if (gripOn) {
       const reopened = P && o > FIST_OUT;
       const vanished = !P && now - lostAt > 60;     // a fast flick often blurs the hand out of view
-      if ((reopened || vanished) && grip > 0.18) { gripOn = false; shatter(Math.max(0.6, grip)); grip = 0; }
+      if ((reopened || vanished) && grip > 0.35) { gripOn = false; armedAt = 0; shatter(Math.max(0.6, grip)); grip = 0; }
       else if (now - gripSeen > 700) { gripOn = false; }
     }
     if (!gripOn) grip = Math.max(0, grip - rdt * 4);
@@ -419,7 +451,11 @@ export function createRobot(root, glCanvas, fx) {
       for (const [ox, oy] of [[0, 0], [0, -18], [14, 8], [-14, 8]]) { const h = pick(P[8][0] + ox, P[8][1] + oy); if (h) { hovered = h.part; hitPt = h.point; break; } }
     }
     if (hovered !== aim) { if (aim && !aim.userData.broken) glowPart(aim, 0); aim = hovered; charge = 0; if (aim) tick(900, 0.05, 0.04); }
-    if (aim) {
+    if (aim && aim.userData.name === "torso") {
+      // the chest is too strong for a finger: it sparks and rings, nothing comes off
+      if (now - dentT > 350) { dentT = now; emit(hitPt, 40, 2.5, HOT, 0.8); clink(); clink(); shake = Math.max(shake, 0.03); }
+      glowPart(aim, 0.3);
+    } else if (aim) {
       charge += rdt / 0.2; glowPart(aim, 0.6 + 0.6 * Math.abs(Math.sin(t * 22)));
       if (charge >= 1 || hand.speed(8) > 1200) { const p = aim; aim = null; charge = 0; cooldown = 0.22; breakPart(p, hitPt); }
     }
@@ -436,7 +472,7 @@ export function createRobot(root, glCanvas, fx) {
       }
       if (!laserSnd) laserSnd = laser();
       if (beam.hit) {
-        const p = beam.hit.part; p.userData.heat += rdt / 0.55;
+        const p = beam.hit.part; p.userData.heat = Math.min(p.userData.name === "torso" ? 0.8 : 9, p.userData.heat + rdt / 0.55);
         glowPart(p, 0.5 + p.userData.heat * 2.5, 0xff7a20);
         if (Math.random() < 0.9) emit(beam.hit.point, 5, 2.5, HOT, 1);
         if (Math.random() < 0.4) emit(beam.hit.point, 2, 0.6, FIRE, 0.6, -1.5, 1.2);
@@ -506,7 +542,10 @@ export function createRobot(root, glCanvas, fx) {
     if (flashT > 0) { flashT -= rdt * 3; flash.material.opacity = Math.max(0, flashT); flash.scale.setScalar(flash.userData.size * (1.5 - flashT * 0.7)); }
     if (waveT > 0) { waveT -= rdt * 1.6; wave.material.opacity = Math.max(0, waveT); wave.scale.setScalar(0.3 + (1 - waveT) * 4.5); }
     shake = shake * Math.pow(0.03, rdt) + grip * 0.014;
-    camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = 0.3 + (Math.random() - 0.5) * shake;
+    gyro.yaw += (gyro.ty - gyro.yaw) * Math.min(1, rdt * 14); gyro.pitch += (gyro.tp - gyro.pitch) * Math.min(1, rdt * 14);
+    camera.rotation.y = gyro.yaw; camera.rotation.x = gyro.pitch;
+    camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = 0.2 + (Math.random() - 0.5) * shake;
+    senseRoom(now);
     renderer.render(scene, camera);
 
     // overlay: your hand, the laser, the grip tendrils
@@ -560,10 +599,11 @@ export function createRobot(root, glCanvas, fx) {
   }
 
   return {
-    enter() { if (!inited) init(); root.hidden = false; glCanvas.hidden = false; resize(); last = performance.now(); },
+    enter() { if (!inited) init(); root.hidden = false; glCanvas.hidden = false; gyro.on = false; gyro.ty = gyro.tp = gyro.yaw = gyro.pitch = 0; resize(); last = performance.now(); },
     exit() { root.hidden = true; glCanvas.hidden = true; if (rum) { rum.stop(); rum = null; } if (laserSnd) { laserSnd.stop(); laserSnd = null; } gripOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
     shatter: () => inited && shatter(1),
+    screenOf: (n) => { const p = parts[n]; if (!p) return null; p.updateMatrixWorld(true); const px = proxies.find((q) => q.userData.part === p); const v = new THREE.Vector3(); px.getWorldPosition(v); v.project(camera); return [(v.x * 0.5 + 0.5) * view.W, (-v.y * 0.5 + 0.5) * view.H]; },
     rebuild: () => inited && rebuild(),
     breakPart: (n) => inited && breakPart(parts[n], new THREE.Vector3().setFromMatrixPosition(parts[n].matrixWorld)),
   };
