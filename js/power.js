@@ -7,7 +7,7 @@
 //   ✌️ two fingers           -> lightning
 //   🤘 index + little finger -> fire
 //   🖖 three fingers         -> spinning energy shield
-import { hand, predicted, drawHand, view, boom, tick, buzz, whoosh } from "./core.js";
+import { hand, predicted, drawHand, view, boom, tick, buzz, whoosh, blast } from "./core.js";
 
 export function createPower(root, fx) {
   const ctx = fx.getContext("2d");
@@ -25,13 +25,80 @@ export function createPower(root, fx) {
       sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, d: 0.5 + Math.random() * 0.9, h: hue + (Math.random() - 0.5) * 40, r: 0.8 + Math.random() * size, g: grav });
     }
   }
+  // the screen glass breaks where the blast hits
+  let cracks = [];
+  function crack(x, y, power) {
+    const lines = [], rings = [];
+    const n = 12 + Math.round(power * 6);
+    for (let i = 0; i < n; i++) {
+      let a = (i / n) * 6.283 + (Math.random() - 0.5) * 0.3, r = 0, px = x, py = y; const seg = [[px, py]];
+      const len = 220 + Math.random() * 520 * power;
+      while (r < len) { r += 18 + Math.random() * 34; a += (Math.random() - 0.5) * 0.35; px = x + Math.cos(a) * r; py = y + Math.sin(a) * r; seg.push([px, py]); }
+      lines.push(seg);
+    }
+    for (let k = 1; k <= 3; k++) { const R = k * (55 + Math.random() * 25); const ring = []; for (let i = 0; i <= n; i++) { const a = (i / n) * 6.283; ring.push([x + Math.cos(a) * R * (0.8 + Math.random() * 0.4), y + Math.sin(a) * R * (0.8 + Math.random() * 0.4)]); } rings.push(ring); }
+    cracks.push({ lines, rings, x, y, life: 1 });
+  }
+  function drawCracks(dt) {
+    ctx.globalCompositeOperation = "source-over";
+    for (let i = cracks.length - 1; i >= 0; i--) {
+      const c = cracks[i]; c.life -= dt / 2.2; if (c.life <= 0) { cracks.splice(i, 1); continue; }
+      const a = Math.min(1, c.life * 1.6);
+      for (const [w, col] of [[3.2, `rgba(0,0,0,${0.45 * a})`], [1.2, `rgba(255,255,255,${0.85 * a})`]]) {
+        ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineJoin = "miter";
+        for (const seg of [...c.lines, ...c.rings]) { ctx.beginPath(); ctx.moveTo(seg[0][0], seg[0][1]); for (const p of seg) ctx.lineTo(p[0], p[1]); ctx.stroke(); }
+      }
+      const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, 60); g.addColorStop(0, `rgba(255,255,255,${0.7 * a})`); g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, 60, 0, 6.283); ctx.fill();
+    }
+  }
+  // the whole hand burns with living energy: flames climb every bone, arcs jump between the fingers
+  const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+  let aura = [], arcT = 0;
+  function powerHand(P, dt, now, heat) {
+    // heat: 0 calm blue fire, 1 white-hot (fist charging)
+    const n = 2 + Math.round(heat * 2);
+    for (const [a, b] of BONES) for (let k = 0; k < n; k++) {
+      const f = Math.random(), x = P[a][0] + (P[b][0] - P[a][0]) * f, y = P[a][1] + (P[b][1] - P[a][1]) * f;
+      aura.push({ x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 60, vy: -80 - Math.random() * 160 * (1 + heat), life: 1, d: 0.22 + Math.random() * 0.28, r: 3 + Math.random() * 5 + heat * 4 });
+    }
+    if (aura.length > 1600) aura.splice(0, aura.length - 1600);
+    for (let i = aura.length - 1; i >= 0; i--) {
+      const q = aura[i]; q.life -= dt / q.d; if (q.life <= 0) { aura.splice(i, 1); continue; }
+      q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.92;
+      const l = q.life, r = q.r * (0.4 + l);
+      const hue = heat > 0.4 ? 30 + l * 25 : 205 - l * 15, light = 50 + l * 40;
+      ctx.fillStyle = `hsla(${hue},100%,${light}%,${0.55 * l})`; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 6.283); ctx.fill();
+    }
+    // a bright core along the bones
+    ctx.lineCap = "round";
+    for (const [w, al] of [[26, 0.08], [12, 0.25], [4, 0.9]]) {
+      ctx.strokeStyle = heat > 0.4 ? `rgba(255,${200 - heat * 60},${140 - heat * 80},${al})` : `rgba(150,215,255,${al})`;
+      ctx.lineWidth = w * (1 + heat * 0.6); ctx.beginPath();
+      for (const [a, b] of BONES) { ctx.moveTo(P[a][0], P[a][1]); ctx.lineTo(P[b][0], P[b][1]); } ctx.stroke();
+    }
+    // electricity jumping between fingertips and off the hand
+    if (now - arcT > 55 - heat * 30) {
+      arcT = now; const tips = [4, 8, 12, 16, 20];
+      const a = tips[(Math.random() * 5) | 0], b = tips[(Math.random() * 5) | 0];
+      if (a !== b) bolt(P[a][0], P[a][1], P[b][0], P[b][1], 0.7, 2);
+      const t2 = tips[(Math.random() * 5) | 0], ang = Math.random() * 6.283;
+      bolt(P[t2][0], P[t2][1], P[t2][0] + Math.cos(ang) * (60 + heat * 120), P[t2][1] + Math.sin(ang) * (60 + heat * 120), 0.6, 2);
+    }
+    // glow of the palm
+    const px = (P[0][0] + P[9][0]) / 2, py = (P[0][1] + P[9][1]) / 2;
+    const g = ctx.createRadialGradient(px, py, 0, px, py, 140 + heat * 90);
+    g.addColorStop(0, heat > 0.4 ? `rgba(255,230,190,${0.35 + heat * 0.4})` : "rgba(140,210,255,.28)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, 140 + heat * 90, 0, 6.283); ctx.fill();
+  }
+
   function explode(x, y, power) {
     blasts.push({ x, y, r: 8, life: 1, p: power }, { x, y, r: 2, life: 1, p: power * 0.6, late: 0.12 });
     burst(x, y, 380 * power, 1300 * power, 30, 420, 3);
     burst(x, y, 160 * power, 700 * power, HUE, 200, 2);
     for (let i = 0; i < 26 * power; i++) { const a = Math.random() * 6.283, s = 60 + Math.random() * 220; smoke.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, r: 20 + Math.random() * 30, life: 1, d: 1.4 + Math.random() * 1.2 }); }
-    shake = 22 * power; flash = 1;
-    boom(0.9 * power, 1.4); whoosh(0.3, 0.4);
+    shake = 34 * power; flash = 1.2;
+    blast(Math.min(1.6, 1.1 * power)); crack(x, y, power);
     try { navigator.vibrate && navigator.vibrate([50, 30, 160]); } catch {}
   }
   function bolt(x0, y0, x1, y1, w = 1, depth = 0) {
@@ -60,7 +127,7 @@ export function createPower(root, fx) {
     const palmY = P ? (P[0][1] + P[5][1] + P[9][1] + P[13][1] + P[17][1]) / 5 : H / 2;
 
     /* ✋ orb: charge, ✊ squeeze, ✋ hurl */
-    if (sign === "open") { orb = Math.min(1, orb + dt / 0.45); orbReadyAt = now; if (orb >= 1 && !chargedSnd) { chargedSnd = true; whoosh(0.22, 0.5); } }
+    if (sign === "open") { orb = Math.min(1, orb + dt / 0.45); orbReadyAt = now; if (orb >= 1 && !chargedSnd) { chargedSnd = true; } }
     if (P) { orbX += (palmX - orbX) * Math.min(1, dt * 28); orbY += (palmY - 55 - orbY) * Math.min(1, dt * 28); }
     if (sign === "fist" && orb > 0.35 && (gripping || now - orbReadyAt < 1600)) {
       if (!gripping) { gripping = true; tick(260, 0.25); buzz(20); }
@@ -227,8 +294,10 @@ export function createPower(root, fx) {
       q.vx *= Math.pow(0.3, dt); q.vy = q.vy * Math.pow(0.3, dt) - 30 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.r += 40 * dt;
       glow(q.x, q.y, q.r, [[0, `rgba(40,36,34,${0.35 * q.life})`], [1, "rgba(40,36,34,0)"]]);
     }
-    if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash * 0.6})`; ctx.fillRect(-60, -60, W + 120, H + 120); flash -= dt * 3.5; }
-    if (P) drawHand(ctx, P, gripping || hole > 0.1 ? "255,140,70" : "130,220,255", 0.5);
+    if (P) { ctx.globalCompositeOperation = "lighter"; powerHand(P, dt, now, gripping ? 0.4 + squeeze * 0.6 : hole > 0.1 ? 0.8 : 0); ctx.globalCompositeOperation = "source-over"; }
+    else aura.length = 0;
+    if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash * 0.75})`; ctx.fillRect(-60, -60, W + 120, H + 120); flash -= dt * 3; }
+    drawCracks(dt);
   }
 
   return {

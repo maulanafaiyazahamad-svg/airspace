@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
-import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio } from "./core.js";
+import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio, blast } from "./core.js";
 
 const FLOOR = -1.5, CAM_Y = 0;
 const FIST_IN = 1.32, FIST_OUT = 1.55;   // hand.open thresholds (3D finger reach ratio)
@@ -383,7 +383,7 @@ export function createRobot(root, glCanvas, fx) {
     [...p.userData.meshes].forEach((m) => launch(m, origin, 3.6, burn));
     emit(at, 240, 5.5, HOT); if (burn) emit(at, 120, 2, FIRE, 1.5, -1.5, 1.4);
     flashAt(at, 1.8); for (let k = 0; k < 4; k++) arc(at);
-    shake = Math.max(shake, 0.1); crunch(0.6); buzz(55);
+    shake = Math.max(shake, 0.1); blast(0.45); buzz(55);
     hitBack();
   }
   // the suit answers a hit by raising a remaining arm and firing its palm at you
@@ -405,7 +405,7 @@ export function createRobot(root, glCanvas, fx) {
     flashAt(origin, 5.5); shock(origin); for (let k = 0; k < 12; k++) arc(origin, 1.2);
     screenFlash("radial-gradient(circle at 50% 45%, #fff, rgba(255,170,90,.6) 40%, transparent 75%)", 0.85);
     timeScale = 0.18; slowHold = 0.85; shake = 0.4;
-    crunch(1.4); setTimeout(() => boom(0.6, 1.6), 90);
+    blast(1.3);
     try { navigator.vibrate && navigator.vibrate([70, 40, 200]); } catch {}
   }
   function rebuild() {
@@ -425,7 +425,6 @@ export function createRobot(root, glCanvas, fx) {
     debris = debris.filter((d) => { if (d.shard) { d.fade = 1; return true; } return false; });
     emit(new THREE.Vector3(0, 0.4, 0).applyMatrix4(body.matrixWorld), 260, 3, COLD, 0.5);
     for (let k = 0; k < 6; k++) arc(new THREE.Vector3(0, 0.4, 0).applyMatrix4(body.matrixWorld), 1.4);
-    tick(300, 0.18, 0.5); setTimeout(() => tick(620, 0.15, 0.4), 220); setTimeout(() => tick(1250, 0.12, 0.3), 440);
   }
   function glowPart(p, k, hue) {
     if (p.userData.image) {
@@ -443,7 +442,7 @@ export function createRobot(root, glCanvas, fx) {
     const depth = camera.position.distanceTo(hitPoint);
     carry = { g, part: p, depth, vel: new THREE.Vector3(), prev: hitPoint.clone(), spin: 0 };
     emit(hitPoint, 200, 4.5, HOT); for (let k = 0; k < 5; k++) arc(hitPoint); flashAt(hitPoint, 1.3);
-    crunch(0.5); buzz(40); shake = Math.max(shake, 0.08);
+    blast(0.35); buzz(40); shake = Math.max(shake, 0.08);
     hitBack();
   }
   function moveCarry(sx, sy, rdt) {
@@ -466,7 +465,7 @@ export function createRobot(root, glCanvas, fx) {
       debris[debris.length - 1].thrown = speed > 3;
     });
     scene.remove(c.g);
-    if (speed > 3) { tick(160, 0.2, 0.25); buzz(20); }
+    if (speed > 3) buzz(20);
   }
 
   /* ---------------- frame ---------------- */
@@ -497,12 +496,12 @@ export function createRobot(root, glCanvas, fx) {
     /* --- open, fist, open: lock on, crush, burst. Never aims, never misses. --- */
     if (P) lostAt = 0; else if (!lostAt) lostAt = now;
     if (fistNow && intactCount && !carry && (gripOn || now - armedAt < 1500)) {
-      if (!gripOn) { gripOn = true; grip = 0; boom(0.25, 0.35); }
+      if (!gripOn) { gripOn = true; grip = 0; }
       gripSeen = now; grip = Math.min(1, grip + rdt / 0.42);
       if (Math.random() < grip * 0.6) buzz(14);
     } else if (gripOn) {
       const reopened = P && sg === "open";
-      const vanished = !P && now - lostAt > 60;     // a fast flick often blurs the hand out of view
+      const vanished = !P && now - lostAt > 60 && grip > 0.6;   // a fast flick can blur the hand out of view
       if ((reopened || vanished) && grip > 0.35) { gripOn = false; armedAt = 0; shatter(Math.max(0.6, grip)); grip = 0; }
       else if (now - gripSeen > 700) { gripOn = false; }
     }
@@ -544,14 +543,14 @@ export function createRobot(root, glCanvas, fx) {
     if (pointNow && cooldown <= 0 && intactCount) {
       for (const [ox, oy] of [[0, 0], [0, -18], [14, 8], [-14, 8]]) { const h = pick(P[8][0] + ox, P[8][1] + oy); if (h) { hovered = h.part; hitPt = h.point; break; } }
     }
-    if (hovered !== aim) { if (aim && !aim.userData.broken) glowPart(aim, 0); aim = hovered; charge = 0; if (aim) tick(900, 0.05, 0.04); }
+    if (hovered !== aim) { if (aim && !aim.userData.broken) glowPart(aim, 0); aim = hovered; charge = 0; }
     if (aim && aim.userData.name === "torso") {
       // the chest is too strong for a finger: it sparks and rings, nothing comes off
-      if (now - dentT > 350) { dentT = now; emit(hitPt, 40, 2.5, HOT, 0.8); clink(); clink(); shake = Math.max(shake, 0.03); }
+      if (now - dentT > 350) { dentT = now; emit(hitPt, 40, 2.5, HOT, 0.8); shake = Math.max(shake, 0.03); }
       glowPart(aim, 0.3);
     } else if (aim) {
-      charge += rdt / 0.2; glowPart(aim, 0.6 + 0.6 * Math.abs(Math.sin(t * 22)));
-      if (charge >= 1 || hand.speed(8) > 1200) { const p = aim; aim = null; charge = 0; cooldown = 0.22; breakPart(p, hitPt); }
+      charge += rdt / 0.25; glowPart(aim, 0.6 + 0.6 * Math.abs(Math.sin(t * 22)));
+      if (charge >= 1) { const p = aim; aim = null; charge = 0; cooldown = 0.22; breakPart(p, hitPt); }
     }
 
     /* --- two fingers (V): laser --- */
@@ -623,8 +622,7 @@ export function createRobot(root, glCanvas, fx) {
       ob.rotation.x += q.w.x * dt; ob.rotation.y += q.w.y * dt; ob.rotation.z += q.w.z * dt;
       if (ob.position.y < FLOOR + q.r) {
         ob.position.y = FLOOR + q.r;
-        if (q.v.y < -2 && now - lastClink > 35) { clink(); lastClink = now; }
-        if (q.thrown && q.v.y < -2.5) { q.thrown = false; emit(ob.position, 120, 4, HOT, 1.2); flashAt(ob.position, 1.2); crunch(0.45); shake = Math.max(shake, 0.12); q.burn = 3; }
+        if (q.thrown && q.v.y < -2.5) { q.thrown = false; emit(ob.position, 120, 4, HOT, 1.2); flashAt(ob.position, 1.2); blast(0.35); shake = Math.max(shake, 0.12); q.burn = 3; }
         if (q.v.y < 0) q.v.y *= -0.32;
         q.v.x *= 0.78; q.v.z *= 0.78; q.w.multiplyScalar(0.7);
       }
@@ -687,7 +685,7 @@ export function createRobot(root, glCanvas, fx) {
     A.userData.palm.getWorldPosition(tv);
     flashAt(tv, 2.2); emit(tv, 140, 3.5, COLD, 0.6);
     screenFlash("radial-gradient(circle at 50% 50%, rgba(160,240,255,.95), rgba(95,230,255,.35) 45%, transparent 80%)", 0.7);
-    shake = Math.max(shake, 0.16); boom(0.35, 0.4); tick(2600, 0.12, 0.15); buzz(35);
+    shake = Math.max(shake, 0.16); buzz(35);
   }
   function laser() {
     return { set() {}, stop() {} };   // no droning sound; the hit itself is heard

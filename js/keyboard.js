@@ -25,6 +25,7 @@ export function createKeyboard(root, fx) {
   let shift = /(^|[.!?]\s|\n)$/.test(text), layer = "abc", rects = [], hover = null, lock = null, lastPress = 0, holdT = 0, repT = 0, unsub = null;
   const parts = [], trail = [], cur = [0, 0], tgt = [0, 0];
   let curOn = false, decoding = null, drops = [], rainT = 0, hudT = 0, fistT = 0;
+  const hist = [];
   // positions you placed things at (fist moves the keyboard, pinch on the text moves the text)
   const kbOff = load("kbOff", { x: 0, y: 0 }), kbShow = { ...kbOff }, tOff = load("tOff", { x: 0, y: 0 }), tShow = { ...tOff };
   let kbGrab = null, tGrab = null, kbB = { minX: 0, maxX: 0, minY: 0, maxY: 0 }, tB = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
@@ -137,8 +138,11 @@ export function createKeyboard(root, fx) {
 
   function onHand(type, t) {
     if (type === "pinchdown" && !kbGrab) {
-      const target = hover;
-      if (target && t - lastPress > 110) { lastPress = t; holdT = t; repT = t; press(target); }
+      // the key the ball rested on most in the last moment, not one it brushed while fingers closed
+      const since = t - 160, tally = new Map();
+      for (let i = 1; i < hist.length; i++) { const a = hist[i - 1]; if (hist[i].t < since || !a.el) continue; tally.set(a.el, (tally.get(a.el) || 0) + (hist[i].t - Math.max(a.t, since))); }
+      let target = hover, best = -1; for (const [el, ms] of tally) if (ms > best) { best = ms; target = el; }
+      if (target && t - lastPress > 170) { lastPress = t; holdT = t; repT = t; press(target); }
       else if (!target && overTerm(cur[0], cur[1])) { tGrab = { x: cur[0], y: cur[1], ox: tOff.x, oy: tOff.y }; term.classList.add("grab"); tick(900, 0.08); buzz(12); }
     }
     if (type === "pinchup" && tGrab) { tGrab = null; term.classList.remove("grab"); store("tOff", tOff); }
@@ -183,6 +187,7 @@ export function createKeyboard(root, fx) {
         tOff.y = clamp(tGrab.oy + (cur[1] - tGrab.y) * 1.2, tB.minY, tB.maxY);
       }
       if (!kbGrab && !tGrab && !hand.pinched) setHover(keyAt(cur[0], cur[1], hover));
+      if (!hand.pinched) { hist.push({ t: now, el: hover }); while (hist.length && now - hist[0].t > 300) hist.shift(); }
       if (hand.pinched && hover && hover.dataset.k === "⌫" && now - holdT > 520 && now - repT > 75) { repT = now; press(hover); }
       trail.push([P[8][0], P[8][1], now]);
       drawHand(ctx, P, col, 0.8);

@@ -281,6 +281,15 @@ export function crunch(power = 1) {
   for (let k = 0; k < 4 + power * 6; k++) ping(t + Math.random() * 0.25, 500 + Math.random() * 1800, 0.25 + Math.random() * 0.4, 0.05 * power);
   for (let k = 0; k < 10 * power; k++) noise(t + 0.15 + Math.random() * 0.8, 0.02, "bandpass", 3000 + Math.random() * 4000, 3, 0.15);
 }
+/** The big one: a single crushing detonation that ends cleanly. */
+export function blast(power = 1) {
+  if (!ac) return; const t = ac.currentTime;
+  thump(t, 150, 28, 1.0, 1.0 * power);
+  thump(t + 0.01, 70, 22, 0.8, 0.9 * power);
+  const f = noise(t, 0.9, "lowpass", 5000, 0, 0.9 * power, 0.001); f.frequency.exponentialRampToValueAtTime(90, t + 0.9);
+  noise(t, 0.09, "highpass", 2200, 0, 0.8 * power, 0.001);
+  for (let k = 0; k < 5; k++) ping(t + Math.random() * 0.06, 300 + Math.random() * 900, 0.35, 0.06 * power);
+}
 /** A piece landing on the floor. */
 export function clink() { if (!ac) return; ping(ac.currentTime, 900 + Math.random() * 1600, 0.25, 0.04); }
 /** Straining metal while you squeeze. */
