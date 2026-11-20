@@ -4,7 +4,7 @@
 import { FilesetResolver, HandLandmarker } from "../vendor/mediapipe/vision_bundle.mjs";
 
 export const video = document.getElementById("cam");
-export const view = { W: innerWidth, H: innerHeight, dpr: Math.min(devicePixelRatio || 1, 2), facing: "environment" };
+export const view = { W: innerWidth, H: innerHeight, dpr: Math.min(devicePixelRatio || 1, 1.5), facing: "environment" };
 addEventListener("resize", () => { view.W = innerWidth; view.H = innerHeight; });
 
 /* ---------- camera ---------- */
@@ -77,7 +77,7 @@ function detect() {
 
 /* ---------- filtering ---------- */
 class OneEuro {
-  constructor(minCut = 2.6, beta = 0.018, dCut = 1.2) { this.minCut = minCut; this.beta = beta; this.dCut = dCut; this.x = null; this.dx = 0; this.t = 0; }
+  constructor(minCut = 3.6, beta = 0.03, dCut = 1.2) { this.minCut = minCut; this.beta = beta; this.dCut = dCut; this.x = null; this.dx = 0; this.t = 0; }
   static a(cut, dt) { const tau = 1 / (2 * Math.PI * cut); return 1 / (1 + tau / dt); }
   f(x, t) {
     if (this.x == null) { this.x = x; this.t = t; this.dx = 0; return x; }
@@ -158,9 +158,9 @@ export const hand = {
   emit(type, t, extra) { for (const fn of this.listeners) fn(type, t, extra); },
   // Position of landmark i right now, pushed forward along its velocity.
   at(i, now = performance.now(), out = [0, 0]) {
-    const ahead = Math.min(0.05, Math.max(0, (now - this.detT) / 1000));
-    out[0] = this.pts[i][0] + this.vel[i][0] * ahead * 0.85;
-    out[1] = this.pts[i][1] + this.vel[i][1] * ahead * 0.85;
+    const ahead = Math.min(0.07, Math.max(0, (now - this.detT) / 1000)) + 0.012;
+    out[0] = this.pts[i][0] + this.vel[i][0] * ahead;
+    out[1] = this.pts[i][1] + this.vel[i][1] * ahead;
     return out;
   },
   speed(i) { return Math.hypot(this.vel[i][0], this.vel[i][1]); },
@@ -206,5 +206,33 @@ export function boom(vol = 0.5, len = 0.6) {
   const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(140, t + len);
   const g = ac.createGain(); g.gain.value = vol;
   s.connect(f).connect(g).connect(ac.destination); s.start(t);
+}
+export function crunch(power = 1) {
+  if (!ac) return;
+  const t0 = ac.currentTime;
+  boom(0.7 * power, 1.2);
+  // metal shards: short bright pings at random pitches
+  for (let k = 0; k < 9; k++) {
+    const t = t0 + Math.random() * 0.22, o = ac.createOscillator(), g = ac.createGain();
+    o.type = k % 2 ? "square" : "triangle"; o.frequency.setValueAtTime(400 + Math.random() * 2600, t);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09 * power, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08 + Math.random() * 0.2);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 0.35);
+  }
+  // crackle
+  const n = Math.floor(ac.sampleRate * 0.35), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() < 0.08 ? (Math.random() * 2 - 1) * Math.pow(1 - i / n, 1.5) : 0;
+  const s = ac.createBufferSource(); s.buffer = b; const f = ac.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 1800;
+  const g = ac.createGain(); g.gain.value = 0.9 * power; s.connect(f).connect(g).connect(ac.destination); s.start(t0);
+}
+export function clink() { tick(2200 + Math.random() * 2500, 0.035, 0.05); }
+export function rumble() {
+  if (!ac) return { set() {}, stop() {} };
+  const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+  o.type = "sawtooth"; o.frequency.value = 42; f.type = "lowpass"; f.frequency.value = 160; g.gain.value = 0;
+  o.connect(f).connect(g).connect(ac.destination); o.start();
+  return {
+    set(k) { const t = ac.currentTime; g.gain.setTargetAtTime(0.32 * k, t, 0.05); o.frequency.setTargetAtTime(42 + 50 * k, t, 0.05); f.frequency.setTargetAtTime(160 + 500 * k, t, 0.05); },
+    stop() { const t = ac.currentTime; g.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => { try { o.stop(); } catch {} }, 300); },
+  };
 }
 export function buzz(ms = 10) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }

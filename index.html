@@ -17,9 +17,14 @@
 <canvas id="gl" hidden></canvas>
 
 <!-- Air keyboard -->
-<div id="kbMode" class="mode" hidden>
+<div id="kbMode" class="mode hack" hidden>
+  <canvas id="rain"></canvas>
+  <div id="hud"><span id="hudL">AIR-TYPE // LINK SECURE</span><span id="hudR">TRK -- FPS</span></div>
   <div id="kbTop">
-    <div id="kbText"></div>
+    <div id="term">
+      <div class="tbar"><i></i><i></i><i></i><span>root@shahzad:~/air-type</span></div>
+      <div id="kbText"></div>
+    </div>
     <div id="kbHint">👌 Gola key par lao, chutki lo</div>
   </div>
   <div id="kbStage">
@@ -34,10 +39,9 @@
   <div id="rbBanner"></div>
   <button id="rbRebuild" type="button" hidden>Dobara jodo</button>
   <div id="rbLegend">
-    <div><b>✋</b><span>Haath hilao<br>robot naachega</span></div>
-    <div><b>🤏</b><span>Chutki pakad ke<br>ghumao</span></div>
-    <div><b>👉</b><span>Hisse par ungli<br>= tod do</span></div>
-    <div><b>✊→🖐</b><span>Mutthi kholo<br>= chur chur</span></div>
+    <div><i>1</i><b>🤏</b><span>Chutki pakad ke<br>khiskao = ghumao</span></div>
+    <div><i>2</i><b>☝️</b><span>Ek ungli hisse par<br>= tod do</span></div>
+    <div><i>3</i><b>✊ → 🖐</b><span>Mutthi dabao, phir<br>kholo = chur chur</span></div>
   </div>
 </div>
 

@@ -104,10 +104,38 @@ body.at-home #cam { opacity: .28; filter: blur(2px) saturate(.6); }
 @keyframes banner { 0% { opacity: 0; transform: scale(1.8); } 12% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
 #rbRebuild { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(118px + env(safe-area-inset-bottom,0px)); padding: 13px 24px; border-radius: 99px;
   border: 1px solid rgba(var(--holo),.8); background: rgba(0,0,0,.45); font-size: 16px; font-weight: 500; box-shadow: 0 0 22px rgba(var(--holo),.45); }
-#rbLegend { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+#rbLegend { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
   padding: 10px max(10px, env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(10px, env(safe-area-inset-left,0px));
   background: linear-gradient(transparent, rgba(0,0,0,.6)); pointer-events: none; }
 #rbLegend div { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; font-size: 11.5px; line-height: 1.25; color: rgba(255,255,255,.92); text-shadow: 0 1px 4px #000; }
-#rbLegend b { font-size: 22px; font-weight: 400; }
+#rbLegend b { font-size: 24px; font-weight: 400; }
+#rbLegend i { font: 500 11px var(--mono); font-style: normal; width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; background: rgba(95,230,255,.25); color: #fff; }
+#rbLegend div { font-size: 12.5px; }
 
 @media (prefers-reduced-motion: reduce) { #kb { animation: none; } .caret { animation: none; } }
+
+/* ---------- hacker keyboard ---------- */
+.hack { --holo: 0,255,140; }
+#rain { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .28; pointer-events: none; }
+.hack::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px), radial-gradient(120% 80% at 50% 50%, transparent 50%, rgba(0,0,0,.5)); }
+#hud { position: absolute; left: 70px; right: 70px; top: calc(22px + env(safe-area-inset-top,0px)); display: flex; justify-content: space-between; gap: 8px;
+  font: 500 10.5px var(--mono); letter-spacing: .12em; color: rgba(var(--holo),1); text-shadow: 0 0 8px rgba(var(--holo),.8), 0 1px 3px #000; pointer-events: none; white-space: nowrap; overflow: hidden; }
+#term { width: min(100%, 560px); border: 1px solid rgba(var(--holo),.55); background: rgba(0,6,4,.66); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 0 30px rgba(var(--holo),.25), inset 0 0 30px rgba(var(--holo),.06); position: relative; }
+#term::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(var(--holo),.05) 0 1px, transparent 1px 3px); }
+.tbar { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid rgba(var(--holo),.3); font: 500 11px var(--mono); color: rgba(var(--holo),.85); letter-spacing: .04em; }
+.tbar i { width: 8px; height: 8px; border-radius: 50%; background: rgba(var(--holo),.6); }
+.tbar span { margin-left: 6px; }
+.hack #kbText { font-family: var(--mono); font-weight: 500; font-size: clamp(22px, 6vw, 32px); justify-content: flex-start; text-align: left; padding: 12px 14px 14px;
+  max-height: 4.2em; min-height: 2.4em; color: #eafff4; text-shadow: 0 0 1px #fff, 0 0 12px rgba(var(--holo),1); letter-spacing: 0; }
+.hack #kbText .pr { color: rgba(var(--holo),1); margin-right: 2px; }
+.hack #kbText .ph { color: rgba(var(--holo),.5); text-shadow: none; }
+.hack #kbText .dec { color: rgba(var(--holo),1); }
+.hack .caret { width: .6em; height: 1.05em; background: rgba(var(--holo),.9); box-shadow: 0 0 14px rgba(var(--holo),1); }
+.hack #kbHint { font-family: var(--mono); font-size: 13px; }
+.hack .key { font-family: var(--mono); border-radius: 6px; font-weight: 500; }
+.hack .key.wide { font-size: 13px; letter-spacing: .3em; color: rgba(var(--holo),.9); }
+.hack .key.hover { animation: glitch .18s steps(2) 1; }
+@keyframes glitch { 0% { transform: translateZ(16px) scale(1.08) translateX(-2px); } 50% { transform: translateZ(16px) scale(1.08) translateX(2px); } 100% { transform: translateZ(16px) scale(1.08); } }
+.hack .fly { font-family: var(--mono); }
