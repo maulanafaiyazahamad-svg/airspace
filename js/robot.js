@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
-import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio, blast } from "./core.js";
+import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio, blast as blastSound } from "./core.js";
 
 const FLOOR = -1.5, CAM_Y = 0;
 const FIST_IN = 1.32, FIST_OUT = 1.55;   // hand.open thresholds (3D finger reach ratio)
@@ -20,7 +20,7 @@ export function createRobot(root, glCanvas, fx) {
   let renderer, scene, camera, rig, body, parts = {}, proxies = [], debris = [], tweens = [], flames = [], arcs = [];
   let sparks, flash, wave, glowMat, eyeMat, reactorLight, ring, inited = false, last = performance.now(), TOTAL = 1, intactCount = 0;
   let yawT = 0, pitchT = 0, drag = null, carry = null, aim = null, charge = 0, cooldown = 0, wasPinch = false;
-  let openSince = 0, armedAt = 0, pointN = 0, vN = 0, dentT = 0, move = null, imageSuit = false, ready = true;
+  let burstPhase = "idle", burstT = 0, openSince = 0, armedAt = 0, pointN = 0, vN = 0, dentT = 0, move = null, imageSuit = false, ready = true;
   const posT = { x: 0, y: 0 };
   // phone orientation, so the suit stays put in the room while the phone moves
   const gyro = { on: false, a0: 0, b0: 0, yaw: 0, pitch: 0, ty: 0, tp: 0 };
@@ -383,7 +383,7 @@ export function createRobot(root, glCanvas, fx) {
     [...p.userData.meshes].forEach((m) => launch(m, origin, 3.6, burn));
     emit(at, 240, 5.5, HOT); if (burn) emit(at, 120, 2, FIRE, 1.5, -1.5, 1.4);
     flashAt(at, 1.8); for (let k = 0; k < 4; k++) arc(at);
-    shake = Math.max(shake, 0.1); blast(0.45); buzz(55);
+    shake = Math.max(shake, 0.1); blastSound(0.45); buzz(55);
     hitBack();
   }
   // the suit answers a hit by raising a remaining arm and firing its palm at you
@@ -405,7 +405,7 @@ export function createRobot(root, glCanvas, fx) {
     flashAt(origin, 5.5); shock(origin); for (let k = 0; k < 12; k++) arc(origin, 1.2);
     screenFlash("radial-gradient(circle at 50% 45%, #fff, rgba(255,170,90,.6) 40%, transparent 75%)", 0.85);
     timeScale = 0.18; slowHold = 0.85; shake = 0.4;
-    blast(1.3);
+    blastSound(1.3);
     try { navigator.vibrate && navigator.vibrate([70, 40, 200]); } catch {}
   }
   function rebuild() {
@@ -442,7 +442,7 @@ export function createRobot(root, glCanvas, fx) {
     const depth = camera.position.distanceTo(hitPoint);
     carry = { g, part: p, depth, vel: new THREE.Vector3(), prev: hitPoint.clone(), spin: 0 };
     emit(hitPoint, 200, 4.5, HOT); for (let k = 0; k < 5; k++) arc(hitPoint); flashAt(hitPoint, 1.3);
-    blast(0.35); buzz(40); shake = Math.max(shake, 0.08);
+    blastSound(0.35); buzz(40); shake = Math.max(shake, 0.08);
     hitBack();
   }
   function moveCarry(sx, sy, rdt) {
@@ -494,18 +494,24 @@ export function createRobot(root, glCanvas, fx) {
     if (sg === "open" || (P && o > 1.55 && nExt >= 3)) { if (!openSince) openSince = now; if (now - openSince > 180) armedAt = now; } else openSince = 0;
     cooldown -= rdt;
 
-    /* --- open, fist, open: lock on, crush, burst. Never aims, never misses. --- */
+    /* --- open, close, open: lock on, crush, burst. Never aims, never misses. ---
+       "Close" counts if the hand makes a fist, curls its fingers part-way, or simply drops out of
+       the camera's view (a fist seen from behind is often lost by the tracker). */
     if (P) lostAt = 0; else if (!lostAt) lostAt = now;
-    if (fistNow && intactCount && !carry && (gripOn || now - armedAt < 2500)) {
-      if (!gripOn) { gripOn = true; grip = 0; }
-      gripSeen = now; grip = Math.min(1, grip + rdt / 0.42);
-      if (Math.random() < grip * 0.6) buzz(14);
-    } else if (gripOn) {
-      const reopened = P && (sg === "open" || o > 1.5 || nExt >= 3);
-      const vanished = !P && now - lostAt > 60 && grip > 0.6;   // a fast flick can blur the hand out of view
-      if ((reopened || vanished) && grip > 0.3) { gripOn = false; armedAt = 0; shatter(Math.max(0.6, grip)); grip = 0; }
-      else if (now - gripSeen > 700) { gripOn = false; }
-    }
+    const openish = !!P && (sg === "open" || o > 1.5 || nExt >= 3) && sg !== "point" && sg !== "v";
+    const closed = (!!P && (fistNow || o < 1.38) && sg !== "point" && sg !== "v") || (!P && lostAt && now - lostAt > 90);
+    if (intactCount && !carry) {
+      if (burstPhase === "closed") {
+        gripOn = true; grip = Math.min(1, grip + rdt / 0.35);
+        if (P && Math.random() < grip * 0.6) buzz(14);
+        if (openish && now - burstT > 90) { burstPhase = "idle"; gripOn = false; armedAt = 0; shatter(Math.max(0.75, grip)); grip = 0; }
+        else if (now - burstT > 2000) { burstPhase = "idle"; gripOn = false; }
+      } else if (burstPhase === "armed") {
+        if (closed) { burstPhase = "closed"; burstT = now; grip = 0; }
+        else if (!openish && P) burstPhase = "idle";
+      }
+      if (burstPhase === "idle" && openish && !pinchNow && now - armedAt < 300) burstPhase = "armed";
+    } else { burstPhase = "idle"; gripOn = false; }
     if (!gripOn) grip = Math.max(0, grip - rdt * 4);
     if (!gripOn && rum) { rum.stop(); rum = null; }
     if (rum) rum.set(grip);
@@ -623,7 +629,7 @@ export function createRobot(root, glCanvas, fx) {
       ob.rotation.x += q.w.x * dt; ob.rotation.y += q.w.y * dt; ob.rotation.z += q.w.z * dt;
       if (ob.position.y < FLOOR + q.r) {
         ob.position.y = FLOOR + q.r;
-        if (q.thrown && q.v.y < -2.5) { q.thrown = false; emit(ob.position, 120, 4, HOT, 1.2); flashAt(ob.position, 1.2); blast(0.35); shake = Math.max(shake, 0.12); q.burn = 3; }
+        if (q.thrown && q.v.y < -2.5) { q.thrown = false; emit(ob.position, 120, 4, HOT, 1.2); flashAt(ob.position, 1.2); blastSound(0.35); shake = Math.max(shake, 0.12); q.burn = 3; }
         if (q.v.y < 0) q.v.y *= -0.32;
         q.v.x *= 0.78; q.v.z *= 0.78; q.w.multiplyScalar(0.7);
       }
@@ -703,7 +709,7 @@ export function createRobot(root, glCanvas, fx) {
     exit() { root.hidden = true; glCanvas.hidden = true; if (rum) { rum.stop(); rum = null; } if (laserSnd) { laserSnd.stop(); laserSnd = null; } gripOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
     shatter: () => inited && shatter(1),
-    debug: () => ({ gripOn, grip, armedAt, intactCount, sign: hand.sign, open: hand.open }),
+    debug: () => ({ burstPhase, gripOn, grip, armedAt, intactCount, sign: hand.sign, open: hand.open }),
     screenOf: (n) => { const p = parts[n]; if (!p || !ready) return [view.W / 2, view.H / 2]; p.updateMatrixWorld(true); const px = proxies.find((q) => q.userData.part === p); const v = new THREE.Vector3(); px.getWorldPosition(v); v.project(camera); return [(v.x * 0.5 + 0.5) * view.W, (-v.y * 0.5 + 0.5) * view.H]; },
     rebuild: () => inited && rebuild(),
     breakPart: (n) => inited && breakPart(parts[n], new THREE.Vector3().setFromMatrixPosition(parts[n].matrixWorld)),
