@@ -204,3 +204,15 @@ body:not(.at-home) #homeBg { display: none; }
 .skin-clean .key { background: rgba(8,12,18,.52); border: 1.5px solid rgba(255,255,255,.85); color: #fff; font-weight: 500;
   text-shadow: 0 1px 4px rgba(0,0,0,.9); box-shadow: 0 8px 20px rgba(0,0,0,.35); }
 .skin-clean .key.hover { background: rgba(var(--holo),.45); }
+
+/* v11: hacker skin is a small floating terminal again; clean skin shows only your words */
+#term .name { display: none !important; }
+.tbar { display: none; }
+.skin-hacker .tbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid rgba(var(--holo),.35);
+  font: 500 12px var(--mono); letter-spacing: .04em; color: rgba(var(--holo),1); text-shadow: 0 0 8px rgba(var(--holo),.9); text-align: left; }
+.skin-hacker .tbar i { width: 8px; height: 8px; border-radius: 50%; background: rgba(var(--holo),.7); box-shadow: 0 0 6px rgba(var(--holo),.9); }
+.skin-hacker .tbar span { margin-left: 6px; }
+.skin-hacker #term { width: min(92vw, 520px); margin-left: calc(min(92vw, 520px) / -2); border: 1px solid rgba(var(--holo),.6) !important; background: rgba(0,8,5,.62) !important;
+  border-radius: 8px !important; overflow: hidden !important; box-shadow: 0 0 30px rgba(var(--holo),.3), inset 0 0 30px rgba(var(--holo),.07) !important; }
+.skin-hacker #kbText { justify-content: flex-start; text-align: left; padding: 10px 14px 14px; min-height: 2.4em; font: 500 clamp(22px, 6.2vw, 30px)/1.25 var(--mono); }
+.skin-hacker #kbText .pr { display: inline; color: rgba(var(--holo),1); margin-right: .45em; }

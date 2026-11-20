@@ -77,7 +77,7 @@ export function createKeyboard(root, fx) {
   function render(decodeLast) {
     const shown = text.length > 80 ? text.slice(-80) : text;
     textEl.innerHTML = "";
-    const pr = document.createElement("span"); pr.className = "pr"; pr.textContent = "›"; textEl.append(pr);
+    const pr = document.createElement("span"); pr.className = "pr"; pr.textContent = "$"; textEl.append(pr);
     if (!text) { const ph = document.createElement("span"); ph.className = "ph"; ph.textContent = "Hawa mein likho"; textEl.append(ph); }
     else {
       const body = document.createElement("span"); body.textContent = decodeLast ? shown.slice(0, -1) : shown; textEl.append(body);
