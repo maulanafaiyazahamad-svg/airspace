@@ -103,11 +103,8 @@ function drawHome(now) {
     c.fillStyle = "rgba(0,0,0,.14)"; c.fillRect(0, 0, cv.width, cv.height); c.fillStyle = "#00ff8c"; c.font = "14px Geist Mono, monospace";
     drops.forEach((y, i) => { c.fillText(r(), i * 14, y); drops[i] = y > cv.height + Math.random() * 300 ? 0 : y + 14; });
   }, 40);
-  const T = "SHAHZAD"; let f = 0;
-  const sc = setInterval(() => {
-    f++; name.textContent = [...T].map((ch, i) => (f > 8 + i * 3 ? ch : r())).join("");
-    if (f === 8 + T.length * 3) { clearInterval(sc); name.classList.add("glitch"); type("SYSTEM ONLINE"); }
-  }, 45);
+  name.textContent = "SHAHZAD";
+  setTimeout(() => { name.classList.add("lit"); setTimeout(() => type("SYSTEM ONLINE"), 900); }, 300);
   function type(t) { let i = 0; const iv = setInterval(() => { sub.textContent = t.slice(0, ++i) + (i < t.length ? "_" : ""); if (i >= t.length) { clearInterval(iv); setTimeout(end, 650); } }, 45); }
   function end() { el.classList.add("done"); setTimeout(() => clearInterval(rain), 700); }
 })();

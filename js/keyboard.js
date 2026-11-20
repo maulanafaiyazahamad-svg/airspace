@@ -88,13 +88,7 @@ export function createKeyboard(root, fx) {
     clearInterval(decoding); let n = 0;
     decoding = setInterval(() => { if (++n > 4) { el.textContent = ch; el.className = ""; clearInterval(decoding); } else el.textContent = rnd(); }, 26);
   }
-  function scrambleName() {
-    const target = "SHAHZAD"; let f = 0;
-    const iv = setInterval(() => {
-      f++; nameEl.textContent = [...target].map((c, i) => (f > i * 2 + 4 ? c : rnd())).join("");
-      if (f > target.length * 2 + 4) clearInterval(iv);
-    }, 40);
-  }
+  function scrambleName() { nameEl.textContent = "SHAHZAD"; }
 
   function press(el) {
     const k = el.dataset.k; let typed = false;

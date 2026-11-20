@@ -1,0 +1,141 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Robot designs</title>
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.min.js" } }</script>
+</head><body>
+<canvas id="c" width="720" height="960"></canvas>
+<script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "./vendor/three/RoomEnvironment.js";
+import { RoundedBoxGeometry } from "./vendor/three/RoundedBoxGeometry.js";
+
+// Eight original suit designs, built from the same parametric body.
+export const SUITS = [
+  { id: 1, name: "TITAN",   armor: 0x22262d, plate: 0x9aa3ad, dark: 0x0b0d10, glow: 0x55e4ff, eye: 0xff2a1a, bulk: 1.15, shoulder: "block",   helmet: "slit",  chest: "hex" },
+  { id: 2, name: "FROST",   armor: 0xe9eef3, plate: 0x8fa3b5, dark: 0x1a2028, glow: 0x6fefff, eye: 0x6fefff, bulk: 0.9,  shoulder: "round",   helmet: "v",     chest: "plate", rough: 0.3 },
+  { id: 3, name: "RONIN",   armor: 0x121214, plate: 0x8c1420, dark: 0x050506, glow: 0xff3b3b, eye: 0xff3b3b, bulk: 1.0,  shoulder: "layered", helmet: "horns", chest: "vent" },
+  { id: 4, name: "VENOM",   armor: 0x0e1110, plate: 0x2a302c, dark: 0x050605, glow: 0x5dff7a, eye: 0x5dff7a, bulk: 0.95, shoulder: "spike",   helmet: "mono",  chest: "vent", rough: 0.55 },
+  { id: 5, name: "GOLIATH", armor: 0x3d4630, plate: 0xd8a619, dark: 0x15170f, glow: 0xffb21e, eye: 0xffd04a, bulk: 1.35, shoulder: "block",   helmet: "mono",  chest: "plate", rough: 0.45 },
+  { id: 6, name: "CHROME",  armor: 0xd5dae0, plate: 0x7c8794, dark: 0x1c2027, glow: 0x4aa8ff, eye: 0x4aa8ff, bulk: 1.0,  shoulder: "round",   helmet: "crest", chest: "hex", rough: 0.06 },
+  { id: 7, name: "MAGMA",   armor: 0x1b1a1a, plate: 0x3a3634, dark: 0x0a0909, glow: 0xff6a12, eye: 0xffa040, bulk: 1.2,  shoulder: "spike",   helmet: "horns", chest: "vent", rough: 0.5 },
+  { id: 8, name: "PHANTOM", armor: 0x221633, plate: 0x5b3c86, dark: 0x0c0814, glow: 0xff3fd8, eye: 0xff3fd8, bulk: 0.85, shoulder: "round",   helmet: "tri",   chest: "hex" },
+];
+
+export function buildBody(S) {
+  const B = S.bulk, root = new THREE.Group();
+  const mat = {
+    armor: new THREE.MeshStandardMaterial({ color: S.armor, metalness: 0.95, roughness: S.rough ?? 0.22 }),
+    plate: new THREE.MeshStandardMaterial({ color: S.plate, metalness: 1, roughness: (S.rough ?? 0.22) * 0.8 }),
+    dark: new THREE.MeshStandardMaterial({ color: S.dark, metalness: 0.8, roughness: 0.45 }),
+    glow: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: S.glow, emissiveIntensity: 3.2 }),
+    eye: new THREE.MeshStandardMaterial({ color: 0x000000, emissive: S.eye, emissiveIntensity: 5 }),
+  };
+  const RB = (w, h, d, r = 0.03) => new RoundedBoxGeometry(w, h, d, 2, Math.min(r, Math.min(w, h, d) * 0.45));
+  const add = (par, geo, m, x, y, z, rx = 0, ry = 0, rz = 0, sc) => { const o = new THREE.Mesh(geo, mat[m]); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); if (sc) o.scale.set(...sc); par.add(o); return o; };
+  const grp = (par, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); par.add(g); return g; };
+
+  // torso
+  const T = grp(root, 0, 0, 0);
+  add(T, RB(0.44 * B, 0.22, 0.3 * B, 0.05), "armor", 0, -0.02, 0);
+  add(T, new THREE.CylinderGeometry(0.17 * B, 0.2 * B, 0.2, 20), "dark", 0, 0.17, 0);
+  for (const y of [0.13, 0.22]) for (const s of [-1, 1]) add(T, RB(0.12 * B, 0.075, 0.05, 0.02), "plate", s * 0.07 * B, y, 0.17 * B);
+  add(T, RB(0.74 * B, 0.48, 0.42 * B, 0.09), "armor", 0, 0.58, 0);
+  if (S.chest === "hex") {
+    add(T, new THREE.CylinderGeometry(0.08, 0.08, 0.05, 6), "glow", 0, 0.6, 0.22 * B + 0.02, Math.PI / 2);
+    add(T, new THREE.TorusGeometry(0.11, 0.02, 8, 6), "plate", 0, 0.6, 0.22 * B + 0.025, 0, 0, Math.PI / 6);
+    for (const s of [-1, 1]) add(T, RB(0.24 * B, 0.18, 0.06, 0.03), "plate", s * 0.2 * B, 0.66, 0.2 * B, 0, -s * 0.3, s * 0.06);
+  } else if (S.chest === "vent") {
+    for (let k = 0; k < 4; k++) add(T, RB(0.3 * B, 0.025, 0.04, 0.01), "glow", 0, 0.48 + k * 0.06, 0.21 * B + 0.01);
+    for (const s of [-1, 1]) add(T, RB(0.18 * B, 0.36, 0.06, 0.03), "plate", s * 0.25 * B, 0.6, 0.2 * B, 0, -s * 0.35, 0);
+  } else {
+    add(T, RB(0.52 * B, 0.3, 0.08, 0.04), "plate", 0, 0.64, 0.21 * B);
+    add(T, RB(0.16, 0.035, 0.02, 0.01), "glow", 0, 0.54, 0.25 * B);
+  }
+  add(T, RB(0.32 * B, 0.08, 0.28 * B, 0.03), "dark", 0, 0.86, 0);
+  add(T, RB(0.5 * B, 0.4, 0.14, 0.05), "dark", 0, 0.58, -0.25 * B);
+  for (const s of [-1, 1]) add(T, RB(0.03, 0.28, 0.02, 0.01), "glow", s * 0.13 * B, 0.6, -0.25 * B - 0.075);
+
+  // head
+  const H = grp(root, 0, 0.92, 0);
+  add(H, new THREE.CylinderGeometry(0.08, 0.1, 0.08, 16), "dark", 0, 0.02, 0);
+  if (S.helmet === "slit") {
+    add(H, RB(0.3, 0.26, 0.32, 0.1), "armor", 0, 0.17, 0); add(H, RB(0.26, 0.12, 0.08, 0.03), "plate", 0, 0.1, 0.15);
+    add(H, RB(0.24, 0.035, 0.02, 0.01), "eye", 0, 0.2, 0.162); add(H, RB(0.34, 0.05, 0.3, 0.02), "plate", 0, 0.3, -0.01);
+  } else if (S.helmet === "v") {
+    add(H, new THREE.SphereGeometry(0.16, 28, 20), "armor", 0, 0.19, 0, 0, 0, 0, [0.95, 1.1, 1.05]);
+    for (const s of [-1, 1]) add(H, RB(0.12, 0.026, 0.02, 0.01), "eye", s * 0.05, 0.2, 0.155, 0, 0, -s * 0.35);
+    add(H, RB(0.18, 0.08, 0.06, 0.03), "plate", 0, 0.1, 0.13);
+  } else if (S.helmet === "horns") {
+    add(H, RB(0.28, 0.26, 0.3, 0.09), "armor", 0, 0.18, 0); add(H, RB(0.22, 0.1, 0.06, 0.03), "plate", 0, 0.1, 0.14);
+    for (const s of [-1, 1]) { add(H, RB(0.07, 0.022, 0.015, 0.008), "eye", s * 0.05, 0.21, 0.152, 0, 0, -s * 0.15); add(H, new THREE.ConeGeometry(0.035, 0.28, 10), "plate", s * 0.12, 0.38, 0.02, -0.2, 0, -s * 0.45); }
+  } else if (S.helmet === "mono") {
+    add(H, RB(0.3, 0.24, 0.3, 0.1), "armor", 0, 0.17, 0);
+    add(H, new THREE.CylinderGeometry(0.055, 0.055, 0.04, 24), "dark", 0, 0.19, 0.15, Math.PI / 2); add(H, new THREE.CylinderGeometry(0.035, 0.035, 0.03, 24), "eye", 0, 0.19, 0.17, Math.PI / 2);
+    add(H, RB(0.32, 0.05, 0.32, 0.02), "plate", 0, 0.3, 0);
+  } else if (S.helmet === "crest") {
+    add(H, new THREE.SphereGeometry(0.15, 28, 20), "armor", 0, 0.19, 0, 0, 0, 0, [0.95, 1.15, 1.05]);
+    add(H, RB(0.2, 0.03, 0.02, 0.01), "eye", 0, 0.21, 0.155); add(H, RB(0.03, 0.12, 0.3, 0.01), "plate", 0, 0.34, -0.02);
+    add(H, RB(0.2, 0.09, 0.06, 0.03), "plate", 0, 0.1, 0.13);
+  } else {
+    add(H, new THREE.OctahedronGeometry(0.17, 1), "armor", 0, 0.2, 0, 0, Math.PI / 4, 0, [1, 1.1, 0.95]);
+    for (const [x, y] of [[-0.05, 0.22], [0.05, 0.22], [0, 0.17]]) add(H, new THREE.SphereGeometry(0.018, 12, 8), "eye", x, y, 0.15);
+  }
+
+  // arms
+  for (const s of [-1, 1]) {
+    const A = grp(root, s * (0.44 * B + 0.1), 0.76, 0); A.rotation.z = s * 0.1;
+    add(A, new THREE.SphereGeometry(0.11 * B, 20, 14), "dark", 0, 0, 0);
+    if (S.shoulder === "block") { add(A, RB(0.34 * B, 0.24, 0.42 * B, 0.09), "armor", s * 0.05, 0.08, 0, 0, 0, -s * 0.18); add(A, RB(0.28 * B, 0.05, 0.38 * B, 0.02), "plate", s * 0.06, 0.22, 0, 0, 0, -s * 0.18); }
+    else if (S.shoulder === "round") add(A, new THREE.SphereGeometry(0.17 * B, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), "plate", s * 0.03, 0.03, 0, 0, 0, -s * 0.3, [1, 0.85, 1.05]);
+    else if (S.shoulder === "spike") { add(A, RB(0.28 * B, 0.18, 0.34 * B, 0.06), "armor", s * 0.04, 0.07, 0, 0, 0, -s * 0.2); for (let k = 0; k < 3; k++) add(A, new THREE.ConeGeometry(0.035, 0.2, 8), "plate", s * (0.06 + k * 0.03), 0.22, -0.1 + k * 0.1, 0, 0, -s * 0.5); }
+    else for (let k = 0; k < 3; k++) add(A, RB(0.3 * B, 0.06, 0.36 * B, 0.02), k % 2 ? "plate" : "armor", s * (0.07 + k * 0.02), 0.1 - k * 0.07, 0, 0, 0, -s * (0.3 + k * 0.1));
+    add(A, new THREE.CapsuleGeometry(0.085 * B, 0.22, 6, 16), "armor", 0, -0.27, 0);
+    const el = grp(A, 0, -0.5, 0); el.rotation.x = -0.22;
+    add(el, new THREE.SphereGeometry(0.08 * B, 16, 12), "dark", 0, 0, 0);
+    add(el, RB(0.2 * B, 0.34, 0.21 * B, 0.06), "armor", 0, -0.2, 0);
+    add(el, RB(0.22 * B, 0.09, 0.23 * B, 0.03), "plate", 0, -0.08, 0);
+    add(el, RB(0.025, 0.2, 0.015, 0.008), "glow", 0, -0.22, 0.105 * B + 0.01);
+    add(el, RB(0.16 * B, 0.15, 0.15 * B, 0.04), "dark", 0, -0.45, 0);
+  }
+  // legs
+  for (const s of [-1, 1]) {
+    const L = grp(root, s * 0.15 * B, -0.12, 0);
+    add(L, new THREE.SphereGeometry(0.1 * B, 18, 12), "dark", 0, 0, 0);
+    add(L, RB(0.2 * B, 0.4, 0.24 * B, 0.06), "armor", 0, -0.25, 0);
+    add(L, RB(0.16 * B, 0.24, 0.05, 0.02), "plate", 0, -0.22, 0.12 * B + 0.01);
+    const kn = grp(L, 0, -0.5, 0);
+    add(kn, RB(0.15 * B, 0.12, 0.09, 0.04), "plate", 0, 0, 0.1 * B);
+    add(kn, RB(0.18 * B, 0.4, 0.22 * B, 0.06), "armor", 0, -0.24, 0);
+    add(kn, RB(0.035, 0.24, 0.015, 0.008), "glow", 0, -0.22, 0.11 * B + 0.01);
+    add(kn, RB(0.22 * B, 0.13, 0.34 * B, 0.05), "armor", 0, -0.48, 0.05);
+    add(kn, RB(0.2 * B, 0.06, 0.1, 0.03), "plate", 0, -0.51, 0.05 + 0.17 * B);
+    const noz = add(kn, new THREE.CylinderGeometry(0.06, 0.08, 0.06, 16), "dark", 0, -0.57, 0);
+    const fl = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.45, 16, 1, true), new THREE.MeshBasicMaterial({ color: S.glow, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    fl.rotation.x = Math.PI; fl.position.y = -0.26; noz.add(fl);
+  }
+  return root;
+}
+
+// render each design and hand the pictures back
+const canvas = document.getElementById("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(720, 960, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xd6e6ff, 0x140f0c, 0.6));
+const key = new THREE.DirectionalLight(0xfff3e6, 2.6); key.position.set(2.5, 4, 5); scene.add(key);
+const rim = new THREE.DirectionalLight(0x9fdcff, 2.4); rim.position.set(-4, 2.5, -3); scene.add(rim);
+const camera = new THREE.PerspectiveCamera(32, 720 / 960, 0.1, 50); camera.position.set(1.6, 0.45, 5.6); camera.lookAt(0, 0.0, 0);
+window.renderSuit = (i) => {
+  scene.children.filter((o) => o.userData.suit).forEach((o) => scene.remove(o));
+  const S = SUITS[i], b = buildBody(S); b.userData.suit = true; b.rotation.y = -0.25; scene.add(b);
+  const bg = new THREE.Color(S.glow).multiplyScalar(0.08);
+  scene.background = bg;
+  renderer.render(scene, camera);
+  return S.name;
+};
+window.ready = true;
+</script>
+</body></html>
