@@ -102,15 +102,16 @@ function toScreen(lm) {
 
 /* ---------- the hand ---------- */
 const TIPS = [8, 12, 16, 20], MCPS = [5, 9, 13, 17];
+const SIGNS = [["open", [1, 1, 1, 1]], ["fist", [0, 0, 0, 0]], ["point", [1, 0, 0, 0]], ["v", [1, 1, 0, 0]], ["rock", [1, 0, 0, 1]], ["three", [1, 1, 1, 0]]];
 export const hand = window.__hand = {
   present: false, seen: 0, detT: 0,
   pts: Array.from({ length: 21 }, () => [0, 0]),
   vel: Array.from({ length: 21 }, () => [0, 0]),
   fx: Array.from({ length: 21 }, () => [new OneEuro(), new OneEuro()]),
-  ext: [false, false, false, false], ratio: [2, 2, 2, 2], open: 2, thumbOut: false,
+  ext: [false, false, false, false], ratio: [2, 2, 2, 2], open: 2, thumbOut: false, sign: "other", _signCand: "", _signN: 0,
   pinch: 0, pinched: false, gesture: "none", _cand: "none", _candN: 0,
   palm: 1, listeners: new Set(),
-  reset() { this.present = false; this.fx.forEach((p) => { p[0].x = null; p[1].x = null; }); this.pinched = false; this.gesture = "none"; },
+  reset() { this.sign = "other"; this.present = false; this.fx.forEach((p) => { p[0].x = null; p[1].x = null; }); this.pinched = false; this.gesture = "none"; },
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
   update(res, t) {
     const lms = res.landmarks && res.landmarks[0];
@@ -140,6 +141,13 @@ export const hand = window.__hand = {
       if (this.ext[k] && r < 1.38) this.ext[k] = false; else if (!this.ext[k] && r > 1.6) this.ext[k] = true;
     }
     this.open = sum / 4;
+    // Which hand sign is this closest to? Score every sign and keep the best match,
+    // so a slightly bent finger still reads as the sign you meant.
+    const ex = this.ratio.map((r) => Math.max(0, Math.min(1, (r - 1.18) / 0.55)));
+    let best = "other", bs = 1.6;
+    for (const [name, tpl] of SIGNS) { let sc = 0; for (let k = 0; k < 4; k++) sc += Math.abs(ex[k] - tpl[k]); if (sc < bs) { bs = sc; best = name; } }
+    if (best === this._signCand) this._signN++; else { this._signCand = best; this._signN = 1; }
+    if (this._signN >= 2) this.sign = best;
     const tr = dist3(G[4], G[5]) / palm3;
     if (this.thumbOut && tr < 0.42) this.thumbOut = false; else if (!this.thumbOut && tr > 0.58) this.thumbOut = true;
     const pr = dist3(G[4], G[8]) / palm3;
@@ -177,7 +185,7 @@ export const hand = window.__hand = {
     }
     this.present = true; this.seen = t; this.detT = t;
     this.palm = dist(this.pts[0], this.pts[9]) || 1;
-    this.ext = pose.ext.slice(); this.open = pose.open; this.thumbOut = !!pose.thumbOut;
+    this.ext = pose.ext.slice(); this.open = pose.open; this.thumbOut = !!pose.thumbOut; this.sign = pose.sign || "other";
     this.pinch = pose.pinch; this.pinched = pose.pinched;
     this.finish(t, first, was);
   },

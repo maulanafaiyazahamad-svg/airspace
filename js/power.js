@@ -1,199 +1,240 @@
-// Shakti: energy you hold in your hand.
-//   open palm          -> a plasma orb grows in your palm
-//   palm, fist, open   -> throw the orb: it bursts in a shockwave
-//   one finger         -> paint light in the air (it hangs there, then fades)
-//   pinch              -> pull every spark in the room into a swirling ball; let go and it scatters
-//   two fingers (V)    -> lightning from your fingertips
-import { hand, predicted, drawHand, view, boom, hum, tick, buzz, whoosh } from "./core.js";
+// Shakti: powers you cast with your hand. The camera stays clean until you use one.
+//   ✋ open palm            -> plasma orb charges in your palm
+//   ✋ → ✊ → ✋             -> squeeze the orb, then hurl it: it flies into the room and explodes
+//   ✊ held (no orb)         -> black hole; open the hand and it goes supernova
+//   ☝️ one finger            -> write with light in the air
+//   🤏 pinch                 -> pull an energy vortex into your fingers; let go and it bursts
+//   ✌️ two fingers           -> lightning
+//   🤘 index + little finger -> fire
+//   🖖 three fingers         -> spinning energy shield
+import { hand, predicted, drawHand, view, boom, tick, buzz, whoosh } from "./core.js";
 
 export function createPower(root, fx) {
   const ctx = fx.getContext("2d");
-  const N = 1100;
-  const dust = Array.from({ length: N }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, vx: 0, vy: 0, s: 0.6 + Math.random() * 1.6, h: Math.random() }));
-  let strokes = [], cur = null, orb = 0, orbX = 0, orbY = 0, squeeze = 0, fistOn = false, armed = 0, openSince = 0;
-  let blasts = [], sparks = [], bolts = [], boltT = 0, humSnd = null, shake = 0, flash = 0, hue = 190, swarmOn = false, pointN = 0, vN = 0;
-  let last = performance.now(), rockN = 0, threeN = 0, flames = [], fireT = 0, shield = 0, shX = 0, shY = 0, hole = 0, holeT = 0, holeX = 0, holeY = 0;
+  let last = performance.now(), shake = 0, flash = 0;
+  let orb = 0, orbX = 0, orbY = 0, squeeze = 0, gripping = false, orbReadyAt = 0, chargedSnd = false;
+  let shots = [], blasts = [], sparks = [], smoke = [], flames = [], bolts = [], strokes = [], pen = null;
+  let vortex = 0, vortexOn = false, vx = 0, vy = 0, motes = [];
+  let hole = 0, holeT = 0, holeX = 0, holeY = 0, shield = 0, shX = 0, shY = 0, boltT = 0, fireT = 0;
+  const HUE = 195;
 
-  function blast(x, y, power) {
-    blasts.push({ x, y, r: 10, life: 1, p: power });
-    for (let i = 0; i < 260 * power; i++) {
-      const a = Math.random() * 6.283, s = 300 + Math.random() * 1300 * power;
-      sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, d: 0.6 + Math.random() * 0.9, h: hue + Math.random() * 40 - 20, r: 1 + Math.random() * 2.5 });
+  /* ---------- spawning ---------- */
+  function burst(x, y, n, speed, hue, grav = 500, size = 2.5) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * 6.283, s = speed * (0.25 + Math.random());
+      sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, d: 0.5 + Math.random() * 0.9, h: hue + (Math.random() - 0.5) * 40, r: 0.8 + Math.random() * size, g: grav });
     }
-    for (const q of dust) { const dx = q.x - x, dy = q.y - y, d = Math.hypot(dx, dy) || 1, f = (1600 * power) / (1 + d / 120); q.vx += (dx / d) * f; q.vy += (dy / d) * f; }
-    shake = 18 * power; flash = 0.9; boom(0.8 * power, 1.2); whoosh(0.35, 0.45);
-    try { navigator.vibrate && navigator.vibrate([40, 30, 120]); } catch {}
   }
-  function bolt(x0, y0, x1, y1, depth = 0) {
-    const pts = [[x0, y0]]; const n = 10;
-    for (let i = 1; i < n; i++) { const f = i / n, j = 60 * (1 - Math.abs(f - 0.5) * 2) + 10; pts.push([x0 + (x1 - x0) * f + (Math.random() - 0.5) * j, y0 + (y1 - y0) * f + (Math.random() - 0.5) * j]); }
-    pts.push([x1, y1]); bolts.push({ pts, life: 1 });
-    if (depth < 1 && Math.random() < 0.6) { const k = pts[(3 + Math.random() * 5) | 0]; bolt(k[0], k[1], k[0] + (Math.random() - 0.5) * 300, k[1] + (Math.random() - 0.5) * 300, depth + 1); }
+  function explode(x, y, power) {
+    blasts.push({ x, y, r: 8, life: 1, p: power }, { x, y, r: 2, life: 1, p: power * 0.6, late: 0.12 });
+    burst(x, y, 380 * power, 1300 * power, 30, 420, 3);
+    burst(x, y, 160 * power, 700 * power, HUE, 200, 2);
+    for (let i = 0; i < 26 * power; i++) { const a = Math.random() * 6.283, s = 60 + Math.random() * 220; smoke.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, r: 20 + Math.random() * 30, life: 1, d: 1.4 + Math.random() * 1.2 }); }
+    shake = 22 * power; flash = 1;
+    boom(0.9 * power, 1.4); whoosh(0.3, 0.4);
+    try { navigator.vibrate && navigator.vibrate([50, 30, 160]); } catch {}
+  }
+  function bolt(x0, y0, x1, y1, w = 1, depth = 0) {
+    const pts = [[x0, y0]], n = 12;
+    for (let i = 1; i < n; i++) { const f = i / n, j = 70 * Math.sin(f * Math.PI) + 8; pts.push([x0 + (x1 - x0) * f + (Math.random() - 0.5) * j, y0 + (y1 - y0) * f + (Math.random() - 0.5) * j]); }
+    pts.push([x1, y1]); bolts.push({ pts, life: 1, w });
+    if (depth < 2 && Math.random() < 0.7) { const k = pts[(3 + Math.random() * 7) | 0]; bolt(k[0], k[1], k[0] + (Math.random() - 0.5) * 260, k[1] + (Math.random() - 0.5) * 260, w * 0.6, depth + 1); }
+  }
+  function glow(x, y, r, stops) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(1, r));
+    stops.forEach(([o, c]) => g.addColorStop(o, c));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, Math.max(1, r), 0, 6.283); ctx.fill();
   }
 
+  /* ---------- frame ---------- */
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const W = view.W, H = view.H, d = view.dpr;
     if (fx.width !== Math.round(W * d)) { fx.width = Math.round(W * d); fx.height = Math.round(H * d); }
     const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake; shake *= Math.pow(0.02, dt);
-    ctx.setTransform(d, 0, 0, d, sx * d, sy * d); ctx.clearRect(-50, -50, W + 100, H + 100);
-    hue = (hue + dt * 20) % 360;
+    ctx.setTransform(d, 0, 0, d, sx * d, sy * d); ctx.clearRect(-60, -60, W + 120, H + 120);
 
     const P = hand.present ? predicted(now) : null;
-    const e = hand.ext, nExt = e.filter(Boolean).length, o = hand.open;
-    const fist = !!P && (o < 1.32 || (fistOn && o < 1.55));
-    const pinch = !!P && hand.pinched && !fist;
-    pointN = P && e[0] && !e[1] && !e[2] && !pinch && !fist ? pointN + 1 : 0;
-    vN = P && e[0] && e[1] && !e[2] && !e[3] && !pinch && !fist ? vN + 1 : 0;
-    rockN = P && e[0] && !e[1] && !e[2] && e[3] && !pinch && !fist ? rockN + 1 : 0;
-    threeN = P && e[0] && e[1] && e[2] && !e[3] && !pinch && !fist ? threeN + 1 : 0;
-    const point = pointN > 3, vsign = vN > 3, rock = rockN > 3, three = threeN > 3, open = !!P && nExt === 4 && o > 1.65;
-    const palmX = P ? (P[0][0] + P[5][0] + P[9][0] + P[13][0] + P[17][0]) / 5 : 0, palmY = P ? (P[0][1] + P[5][1] + P[9][1] + P[13][1] + P[17][1]) / 5 : 0;
+    const sign = P ? (hand.pinched && hand.sign !== "fist" ? "pinch" : hand.sign) : "none";
+    const palmX = P ? (P[0][0] + P[5][0] + P[9][0] + P[13][0] + P[17][0]) / 5 : W / 2;
+    const palmY = P ? (P[0][1] + P[5][1] + P[9][1] + P[13][1] + P[17][1]) / 5 : H / 2;
 
-    // orb: grows on an open palm, squeezes in a fist, flies on release
-    if (open) { if (!openSince) openSince = now; orb = Math.min(1, orb + dt / 0.8); armed = now; } else openSince = 0;
-    if (P) { orbX += (palmX - orbX) * Math.min(1, dt * 25); orbY += (palmY - 40 - orbY) * Math.min(1, dt * 25); }
-    if (fist && orb > 0.3 && now - armed < 1500) { if (!fistOn) { fistOn = true; tick(300, 0.2); } squeeze = Math.min(1, squeeze + dt / 0.35); }
-    else if (fistOn) { fistOn = false; if ((!P || o > 1.55) && squeeze > 0.4) { blast(orbX, orbY, 0.6 + orb * 0.6); orb = 0; } squeeze = 0; }
-    // black hole: hold a fist with no orb; open it and the hole goes supernova
-    if (fist && !fistOn && orb < 0.3) { if (!holeT) holeT = now; hole = Math.min(1, Math.max(0, (now - holeT - 450) / 900)); holeX = palmX; holeY = palmY; }
-    else { if (hole > 0.6 && (!P || o > 1.55)) { blast(holeX, holeY, 1.7); flash = 1; } holeT = 0; hole = Math.max(0, hole - dt * 3); }
-    if (!P || (!open && !fistOn)) orb = Math.max(0, orb - dt * 0.6);
-    if (orb >= 1 && !humSnd) { humSnd = true; whoosh(0.25, 0.6); } else if (orb < 0.5) humSnd = null;
+    /* ✋ orb: charge, ✊ squeeze, ✋ hurl */
+    if (sign === "open") { orb = Math.min(1, orb + dt / 0.45); orbReadyAt = now; if (orb >= 1 && !chargedSnd) { chargedSnd = true; whoosh(0.22, 0.5); } }
+    if (P) { orbX += (palmX - orbX) * Math.min(1, dt * 28); orbY += (palmY - 55 - orbY) * Math.min(1, dt * 28); }
+    if (sign === "fist" && orb > 0.35 && (gripping || now - orbReadyAt < 1600)) {
+      if (!gripping) { gripping = true; tick(260, 0.25); buzz(20); }
+      squeeze = Math.min(1, squeeze + dt / 0.3);
+    } else if (gripping) {
+      gripping = false;
+      if (squeeze > 0.35 && (sign === "open" || !P)) {
+        const tx = W * 0.5 + (orbX - W * 0.5) * 0.35, ty = H * 0.3;
+        shots.push({ x: orbX, y: orbY, x0: orbX, y0: orbY, tx, ty, t: 0, p: 0.7 + orb * 0.5 }); whoosh(0.45, 0.35);
+        orb = 0; chargedSnd = false;
+      }
+      squeeze = 0;
+    }
+    if (!P) orb = 0; else if (sign !== "open" && !gripping) orb = Math.max(0, orb - dt * 1.4);
+    if (orb < 0.5) chargedSnd = false;
 
-    // light painting
-    if (point) {
+    /* ✊ with no orb: black hole */
+    if (sign === "fist" && !gripping && orb < 0.35) { if (!holeT) holeT = now; hole = Math.min(1, Math.max(0, (now - holeT - 350) / 700)); holeX = palmX; holeY = palmY; }
+    else { if (hole > 0.5 && (sign === "open" || !P)) explode(holeX, holeY, 1.6); holeT = 0; hole = Math.max(0, hole - dt * 4); }
+    if (hole > 0.05 && Math.random() < hole) { const a = Math.random() * 6.283, r = 160 + Math.random() * 120; motes.push({ x: holeX + Math.cos(a) * r, y: holeY + Math.sin(a) * r, life: 1, h: 25 }); }
+
+    /* ☝️ light pen */
+    if (sign === "point") {
       const x = P[8][0], y = P[8][1];
-      if (!cur) { cur = { pts: [], h: hue, t: now }; strokes.push(cur); }
-      const lp = cur.pts[cur.pts.length - 1];
-      if (!lp || Math.hypot(x - lp[0], y - lp[1]) > 3) cur.pts.push([x, y]);
-      cur.t = now;
-    } else cur = null;
-    strokes = strokes.filter((s) => now - s.t < 7000);
+      if (!pen) { pen = { pts: [], t: now, h: (now / 40) % 360 }; strokes.push(pen); }
+      const lp = pen.pts[pen.pts.length - 1];
+      if (!lp) pen.pts.push([x, y]); else if (Math.hypot(x - lp[0], y - lp[1]) > 2.5) pen.pts.push([lp[0] + (x - lp[0]) * 0.6, lp[1] + (y - lp[1]) * 0.6]);
+      pen.t = now;
+    } else pen = null;
+    strokes = strokes.filter((s) => now - s.t < 9000);
 
-    // lightning
-    if (vsign && now - boltT > 70) {
+    /* ✌️ lightning */
+    if (sign === "v" && now - boltT > 65) {
       boltT = now;
-      for (const tip of [8, 12]) { const a = Math.atan2(P[tip][1] - P[tip - 3][1], P[tip][0] - P[tip - 3][0]) + (Math.random() - 0.5) * 0.9; bolt(P[tip][0], P[tip][1], P[tip][0] + Math.cos(a) * (250 + Math.random() * 350), P[tip][1] + Math.sin(a) * (250 + Math.random() * 350)); }
-      tick(4500 + Math.random() * 2000, 0.06); if (Math.random() < 0.3) buzz(8);
+      for (const tip of [8, 12]) {
+        const a = Math.atan2(P[tip][1] - P[tip - 3][1], P[tip][0] - P[tip - 3][0]) + (Math.random() - 0.5) * 0.7, L = 280 + Math.random() * 380;
+        bolt(P[tip][0], P[tip][1], P[tip][0] + Math.cos(a) * L, P[tip][1] + Math.sin(a) * L, 1.4);
+      }
+      if (Math.random() < 0.5) tick(5000 + Math.random() * 2500, 0.1, 0.05);
     }
 
-    // fire from the fingertips (index + little finger up)
-    if (rock) {
+    /* 🤘 fire */
+    if (sign === "rock") {
       for (const [tip, base] of [[8, 5], [20, 17]]) {
-        let dx = P[tip][0] - P[base][0], dy = P[tip][1] - P[base][1]; const L2 = Math.hypot(dx, dy) || 1; dx /= L2; dy /= L2;
-        for (let k = 0; k < 7; k++) {
-          const sp = 500 + Math.random() * 500, a = (Math.random() - 0.5) * 0.45, c = Math.cos(a), si = Math.sin(a);
-          flames.push({ x: P[tip][0], y: P[tip][1], vx: (dx * c - dy * si) * sp, vy: (dx * si + dy * c) * sp, life: 1, d: 0.35 + Math.random() * 0.35, r: 3 + Math.random() * 4 });
+        let dx = P[tip][0] - P[base][0], dy = P[tip][1] - P[base][1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+        for (let k = 0; k < 9; k++) {
+          const s = 520 + Math.random() * 520, a = (Math.random() - 0.5) * 0.4, c = Math.cos(a), si = Math.sin(a);
+          flames.push({ x: P[tip][0], y: P[tip][1], vx: (dx * c - dy * si) * s, vy: (dx * si + dy * c) * s, life: 1, d: 0.32 + Math.random() * 0.32, r: 3 + Math.random() * 4 });
         }
       }
-      if (now - fireT > 220) { fireT = now; tick(900 + Math.random() * 300, 0.12, 0.2); }
+      if (now - fireT > 200) { fireT = now; tick(700 + Math.random() * 300, 0.16, 0.2); }
+      if (Math.random() < 0.3) smoke.push({ x: P[8][0], y: P[8][1] - 60, vx: (Math.random() - 0.5) * 40, vy: -80, r: 14, life: 1, d: 1.2 });
     }
-    // energy shield (three fingers up)
-    shield += ((three ? 1 : 0) - shield) * Math.min(1, dt * 8);
-    if (three) { shX = palmX; shY = palmY - 30; }
 
-    // swarm
-    const px = P ? (P[4][0] + P[8][0]) / 2 : 0, py = P ? (P[4][1] + P[8][1]) / 2 : 0;
-    if (pinch && !swarmOn) { swarmOn = true; whoosh(0.25, 0.6); }
-    if (!pinch && swarmOn) { swarmOn = false; for (const q of dust) { const dx = q.x - px, dy = q.y - py, dd = Math.hypot(dx, dy) || 1; if (dd < 200) { q.vx += (dx / dd) * 900; q.vy += (dy / dd) * 900; } } whoosh(0.3, 0.4); }
+    /* 🖖 shield */
+    shield += ((sign === "three" ? 1 : 0) - shield) * Math.min(1, dt * 9);
+    if (sign === "three") { shX = palmX; shY = palmY - 30; }
 
-    // dust
+    /* 🤏 vortex */
+    const px = P ? (P[4][0] + P[8][0]) / 2 : vx, py = P ? (P[4][1] + P[8][1]) / 2 : vy;
+    if (sign === "pinch") {
+      if (!vortexOn) { vortexOn = true; whoosh(0.3, 0.6); }
+      vx = px; vy = py; vortex = Math.min(1, vortex + dt / 0.8);
+      for (let k = 0; k < 6; k++) { const a = Math.random() * 6.283, r = 140 + Math.random() * 180; motes.push({ x: vx + Math.cos(a) * r, y: vy + Math.sin(a) * r, life: 1, h: HUE }); }
+    } else if (vortexOn) {
+      vortexOn = false;
+      if (vortex > 0.3) { burst(vx, vy, 260 * vortex, 900, HUE, 200, 2.5); blasts.push({ x: vx, y: vy, r: 6, life: 1, p: 0.5 }); boom(0.35, 0.5); whoosh(0.3, 0.3); }
+      motes = motes.filter((m) => m.h !== HUE); vortex = 0;
+    }
+
+    /* ---------- draw ---------- */
     ctx.globalCompositeOperation = "lighter";
-    for (const q of dust) {
-      if (swarmOn) { const dx = px - q.x, dy = py - q.y, dd = Math.hypot(dx, dy) || 1; q.vx += (dx / dd) * 2600 * dt + (-dy / dd) * 1900 * dt; q.vy += (dy / dd) * 2600 * dt + (dx / dd) * 1900 * dt; }
-      else if (hole > 0.05) { const dx = holeX - q.x, dy = holeY - q.y, dd = Math.hypot(dx, dy) || 1; q.vx += ((dx / dd) * 3200 + (-dy / dd) * 2600) * hole * dt; q.vy += ((dy / dd) * 3200 + (dx / dd) * 2600) * hole * dt; }
-      else if (shield > 0.3) { const dx = q.x - shX, dy = q.y - shY, dd = Math.hypot(dx, dy); if (dd < 150) { q.vx += (dx / (dd || 1)) * 4000 * dt; q.vy += (dy / (dd || 1)) * 4000 * dt; } }
-      else if (P) { const dx = q.x - palmX, dy = q.y - palmY, dd = Math.hypot(dx, dy); if (dd < 140) { q.vx += (dx / (dd || 1)) * 900 * dt; q.vy += (dy / (dd || 1)) * 900 * dt; } }
-      q.vx *= Math.pow(swarmOn ? 0.2 : 0.35, dt); q.vy *= Math.pow(swarmOn ? 0.2 : 0.35, dt);
-      q.vy += (Math.sin(now / 1400 + q.h * 9) * 6 - 3) * dt;
-      q.x += q.vx * dt; q.y += q.vy * dt - 6 * dt;
-      if (q.x < -10) q.x += W + 20; if (q.x > W + 10) q.x -= W + 20; if (q.y < -10) q.y += H + 20; if (q.y > H + 10) q.y -= H + 20;
-      const sp = Math.min(1, Math.hypot(q.vx, q.vy) / 600);
-      ctx.fillStyle = `hsla(${hue + q.h * 60},100%,${60 + sp * 30}%,${0.25 + sp * 0.6})`;
-      ctx.fillRect(q.x, q.y, q.s + sp * 2, q.s + sp * 2);
+    for (let i = motes.length - 1; i >= 0; i--) {
+      const m = motes[i], cx = m.h === HUE ? vx : holeX, cy = m.h === HUE ? vy : holeY;
+      const dx = cx - m.x, dy = cy - m.y, dd = Math.hypot(dx, dy) || 1;
+      const sp = 380 + (1 - Math.min(1, dd / 300)) * 900;
+      m.x += (dx / dd) * sp * dt + (-dy / dd) * sp * 0.8 * dt; m.y += (dy / dd) * sp * dt + (dx / dd) * sp * 0.8 * dt;
+      if (dd < 12 || (m.h !== HUE && hole < 0.05) || motes.length > 700) { motes.splice(i, 1); continue; }
+      const a = Math.min(1, 1.4 - dd / 300);
+      ctx.strokeStyle = m.h === HUE ? `rgba(140,230,255,${a})` : `rgba(255,170,90,${a})`; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(m.x - (dx / dd) * 10, m.y - (dy / dd) * 10); ctx.stroke();
     }
-    // strokes
+    if (vortex > 0.02) {
+      glow(vx, vy, 30 + vortex * 60, [[0, `rgba(255,255,255,${0.9 * vortex})`], [0.25, `rgba(140,230,255,${0.6 * vortex})`], [1, "rgba(60,160,255,0)"]]);
+      ctx.strokeStyle = `rgba(160,235,255,${0.7 * vortex})`; ctx.lineWidth = 1.5;
+      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.ellipse(vx, vy, 22 + k * 14, 8 + k * 5, now / (300 + k * 120) * (k % 2 ? -1 : 1), 0, 6.283); ctx.stroke(); }
+    }
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     for (const s of strokes) {
       if (s.pts.length < 2) continue;
-      const age = (now - s.t) / 7000, a = 1 - age;
-      for (const [w, al, l] of [[18, 0.12, 55], [8, 0.35, 60], [2.5, 1, 92]]) {
+      const a = Math.max(0, 1 - Math.max(0, now - s.t - 6000) / 3000);
+      for (const [w, al, l] of [[22, 0.1, 55], [10, 0.3, 60], [3, 1, 94]]) {
         ctx.strokeStyle = `hsla(${s.h},100%,${l}%,${al * a})`; ctx.lineWidth = w;
         ctx.beginPath(); ctx.moveTo(s.pts[0][0], s.pts[0][1]); for (const p of s.pts) ctx.lineTo(p[0], p[1]); ctx.stroke();
       }
     }
-    // bolts
+    if (sign === "point") glow(P[8][0], P[8][1], 26, [[0, "rgba(255,255,255,.95)"], [0.4, `hsla(${(now / 40) % 360},100%,65%,.6)`], [1, "rgba(0,0,0,0)"]]);
     for (let i = bolts.length - 1; i >= 0; i--) {
-      const b = bolts[i]; b.life -= dt * 8; if (b.life <= 0) { bolts.splice(i, 1); continue; }
-      for (const [w, al, c] of [[10, 0.18, "150,200,255"], [3, 0.6, "190,225,255"], [1.2, 1, "255,255,255"]]) {
-        ctx.strokeStyle = `rgba(${c},${al * b.life})`; ctx.lineWidth = w;
+      const b = bolts[i]; b.life -= dt * 9; if (b.life <= 0) { bolts.splice(i, 1); continue; }
+      for (const [w, al, c] of [[12, 0.16, "120,180,255"], [4, 0.55, "180,220,255"], [1.4, 1, "255,255,255"]]) {
+        ctx.strokeStyle = `rgba(${c},${al * b.life})`; ctx.lineWidth = w * b.w;
         ctx.beginPath(); ctx.moveTo(b.pts[0][0], b.pts[0][1]); for (const p of b.pts) ctx.lineTo(p[0], p[1]); ctx.stroke();
       }
     }
-    // flames
     for (let i = flames.length - 1; i >= 0; i--) {
       const q = flames[i]; q.life -= dt / q.d; if (q.life <= 0) { flames.splice(i, 1); continue; }
-      q.vx *= Math.pow(0.08, dt); q.vy = q.vy * Math.pow(0.08, dt) - 260 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
-      const r = q.r * (1 + (1 - q.life) * 3);
-      ctx.fillStyle = `hsla(${15 + q.life * 30},100%,${45 + q.life * 40}%,${q.life * 0.55})`; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 6.283); ctx.fill();
+      q.vx *= Math.pow(0.07, dt); q.vy = q.vy * Math.pow(0.07, dt) - 300 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
+      const r = q.r * (1 + (1 - q.life) * 4);
+      glow(q.x, q.y, r * 2, [[0, `hsla(${45 * q.life},100%,${55 + q.life * 35}%,${0.5 * q.life})`], [1, "rgba(255,60,0,0)"]]);
     }
-    // shield
     if (shield > 0.03) {
       ctx.save(); ctx.translate(shX, shY);
+      glow(0, 0, 150 * shield, [[0, `rgba(110,220,255,${0.22 * shield})`], [0.7, `rgba(110,220,255,${0.08 * shield})`], [1, "rgba(110,220,255,0)"]]);
       for (let k = 0; k < 3; k++) {
-        const R = (60 + k * 28) * shield, rot = now / (900 - k * 250) * (k % 2 ? -1 : 1);
-        ctx.strokeStyle = `rgba(110,220,255,${0.75 * shield})`; ctx.lineWidth = k === 0 ? 3 : 1.5;
+        const R = (64 + k * 30) * shield, rot = now / (900 - k * 250) * (k % 2 ? -1 : 1);
+        ctx.strokeStyle = `rgba(130,230,255,${0.85 * shield})`; ctx.lineWidth = k === 0 ? 3 : 1.6;
         ctx.beginPath(); for (let j = 0; j <= 6; j++) { const a = rot + (j * Math.PI) / 3; j ? ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R) : ctx.moveTo(Math.cos(a) * R, Math.sin(a) * R); } ctx.stroke();
-        for (let j = 0; j < 24; j++) { const a = -rot * 1.5 + (j * Math.PI) / 12; ctx.beginPath(); ctx.moveTo(Math.cos(a) * (R + 6), Math.sin(a) * (R + 6)); ctx.lineTo(Math.cos(a) * (R + (j % 3 ? 10 : 16)), Math.sin(a) * (R + (j % 3 ? 10 : 16))); ctx.stroke(); }
+        for (let j = 0; j < 36; j++) { const a = -rot * 1.4 + (j * Math.PI) / 18, r2 = R + (j % 3 ? 9 : 16); ctx.beginPath(); ctx.moveTo(Math.cos(a) * (R + 5), Math.sin(a) * (R + 5)); ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2); ctx.stroke(); }
       }
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 130 * shield); g.addColorStop(0, `rgba(110,220,255,${0.25 * shield})`); g.addColorStop(1, "rgba(110,220,255,0)");
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 130 * shield, 0, 6.283); ctx.fill();
       ctx.restore();
     }
-    // black hole
     if (hole > 0.02) {
-      const R = 18 + hole * 30;
-      const ring = ctx.createRadialGradient(holeX, holeY, R * 0.9, holeX, holeY, R * 3);
-      ring.addColorStop(0, `rgba(255,170,80,${0.9 * hole})`); ring.addColorStop(0.3, `rgba(255,90,40,${0.4 * hole})`); ring.addColorStop(1, "rgba(255,60,20,0)");
-      ctx.fillStyle = ring; ctx.beginPath(); ctx.arc(holeX, holeY, R * 3, 0, 6.283); ctx.fill();
+      const R = 16 + hole * 34;
+      glow(holeX, holeY, R * 3.2, [[0.28, `rgba(255,190,110,${0.95 * hole})`], [0.45, `rgba(255,100,40,${0.45 * hole})`], [1, "rgba(255,60,20,0)"]]);
+      ctx.strokeStyle = `rgba(255,225,190,${hole})`; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(holeX, holeY, R * 2.4, R * 0.5, -0.35, 0, 6.283); ctx.stroke();
       ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(holeX, holeY, R, 0, 6.283); ctx.fill();
       ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = `rgba(255,220,180,${hole})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(holeX, holeY, R * 2.2, R * 0.55, now / 900, 0, 6.283); ctx.stroke();
-      shake = Math.max(shake, hole * 3);
+      shake = Math.max(shake, hole * 2.5);
     }
-    // orb
     if (orb > 0.02) {
-      const R = 26 + orb * 46 - squeeze * 22 + Math.sin(now / 60) * 2, jx = (Math.random() - 0.5) * squeeze * 8, jy = (Math.random() - 0.5) * squeeze * 8;
-      const x = orbX + jx, y = orbY + jy, h = squeeze > 0.3 ? 20 : hue;
-      for (const [r, a] of [[R * 3.2, 0.12], [R * 1.8, 0.3], [R, 0.85]]) {
-        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, `hsla(${h},100%,92%,${a * orb})`); g.addColorStop(0.4, `hsla(${h},100%,60%,${a * 0.7 * orb})`); g.addColorStop(1, `hsla(${h},100%,50%,0)`);
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
-      }
-      if (P && Math.random() < 0.5) { const tip = [4, 8, 12, 16, 20][(Math.random() * 5) | 0]; bolt(x, y, P[tip][0], P[tip][1], 1); }
-      for (let k = 0; k < 3; k++) { const a = now / 300 + k * 2.1; ctx.fillStyle = `hsla(${h},100%,85%,${orb})`; ctx.beginPath(); ctx.arc(x + Math.cos(a) * R * 1.4, y + Math.sin(a * 1.3) * R * 0.6, 3, 0, 6.283); ctx.fill(); }
+      const s = squeeze, R = (20 + orb * 40) * (1 - s * 0.45), j = s * 7;
+      const x = orbX + (Math.random() - 0.5) * j, y = orbY + (Math.random() - 0.5) * j;
+      const c1 = s > 0.3 ? "255,170,90" : "120,215,255", c2 = s > 0.3 ? "255,90,30" : "40,140,255";
+      glow(x, y, R * 4, [[0, `rgba(${c1},${0.35 * orb})`], [1, `rgba(${c2},0)`]]);
+      glow(x, y, R * 1.6, [[0, `rgba(255,255,255,${orb})`], [0.35, `rgba(${c1},${0.85 * orb})`], [1, `rgba(${c2},0)`]]);
+      ctx.strokeStyle = `rgba(${c1},${0.8 * orb})`; ctx.lineWidth = 1.5;
+      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.ellipse(x, y, R * (1.3 + k * 0.25), R * (0.45 + k * 0.1), now / (260 + k * 90) + k, 0, 6.283); ctx.stroke(); }
+      if (P && Math.random() < 0.6) { const tip = [4, 8, 12, 16, 20][(Math.random() * 5) | 0]; bolt(x, y, P[tip][0], P[tip][1], 0.6, 2); }
     }
-    // blasts + sparks
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const q = shots[i]; q.t += dt / 0.34; const k = Math.min(1, q.t), e = k * k;
+      q.x = q.x0 + (q.tx - q.x0) * e; q.y = q.y0 + (q.ty - q.y0) * e - Math.sin(k * Math.PI) * 40;
+      const R = 50 * (1 - k * 0.65);
+      glow(q.x, q.y, R * 2.5, [[0, "rgba(255,255,255,1)"], [0.3, "rgba(255,190,120,.9)"], [1, "rgba(255,90,30,0)"]]);
+      burst(q.x, q.y, 6, 120, 30, 0, 2);
+      if (k >= 1) { explode(q.tx, q.ty, q.p); shots.splice(i, 1); }
+    }
     for (let i = blasts.length - 1; i >= 0; i--) {
-      const b = blasts[i]; b.life -= dt * 1.4; b.r += dt * 1400 * b.p; if (b.life <= 0) { blasts.splice(i, 1); continue; }
-      ctx.strokeStyle = `hsla(${hue},100%,75%,${b.life})`; ctx.lineWidth = 6 * b.life + 1; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.stroke();
-      ctx.strokeStyle = `rgba(255,255,255,${b.life * 0.6})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.7, 0, 6.283); ctx.stroke();
+      const b = blasts[i]; if (b.late > 0) { b.late -= dt; continue; }
+      b.life -= dt * 1.5; b.r += dt * 1500 * b.p; if (b.life <= 0) { blasts.splice(i, 1); continue; }
+      ctx.strokeStyle = `rgba(255,220,170,${b.life})`; ctx.lineWidth = 8 * b.life + 1; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.stroke();
+      if (b.life > 0.7) glow(b.x, b.y, b.r * 0.8, [[0, `rgba(255,255,230,${(b.life - 0.7) * 3})`], [0.5, `rgba(255,150,60,${(b.life - 0.7) * 2})`], [1, "rgba(255,80,20,0)"]]);
     }
     for (let i = sparks.length - 1; i >= 0; i--) {
       const q = sparks[i]; q.life -= dt / q.d; if (q.life <= 0) { sparks.splice(i, 1); continue; }
-      q.vx *= Math.pow(0.15, dt); q.vy = q.vy * Math.pow(0.15, dt) + 300 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
-      ctx.fillStyle = `hsla(${q.h},100%,${60 + q.life * 35}%,${q.life})`; ctx.fillRect(q.x, q.y, q.r, q.r);
+      q.vx *= Math.pow(0.12, dt); q.vy = q.vy * Math.pow(0.12, dt) + q.g * dt; q.x += q.vx * dt; q.y += q.vy * dt;
+      ctx.strokeStyle = `hsla(${q.h},100%,${60 + q.life * 35}%,${q.life})`; ctx.lineWidth = q.r;
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x - q.vx * 0.02, q.y - q.vy * 0.02); ctx.stroke();
     }
-    if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash * 0.5})`; ctx.fillRect(-50, -50, W + 100, H + 100); flash -= dt * 3; }
     ctx.globalCompositeOperation = "source-over";
-    if (P) drawHand(ctx, P, fistOn ? "255,120,60" : vsign ? "180,210,255" : "95,230,255", 0.55);
+    for (let i = smoke.length - 1; i >= 0; i--) {
+      const q = smoke[i]; q.life -= dt / q.d; if (q.life <= 0) { smoke.splice(i, 1); continue; }
+      q.vx *= Math.pow(0.3, dt); q.vy = q.vy * Math.pow(0.3, dt) - 30 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.r += 40 * dt;
+      glow(q.x, q.y, q.r, [[0, `rgba(40,36,34,${0.35 * q.life})`], [1, "rgba(40,36,34,0)"]]);
+    }
+    if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash * 0.6})`; ctx.fillRect(-60, -60, W + 120, H + 120); flash -= dt * 3.5; }
+    if (P) drawHand(ctx, P, gripping || hole > 0.1 ? "255,140,70" : "130,220,255", 0.5);
   }
 
   return {
     enter() { root.hidden = false; last = performance.now(); },
-    exit() { root.hidden = true; humSnd = null; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); },
+    exit() { root.hidden = true; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); motes = []; },
     frame,
-    demoBlast: () => blast(view.W / 2, view.H / 2, 1),
+    demoBlast: () => explode(view.W / 2, view.H / 2, 1),
   };
 }
