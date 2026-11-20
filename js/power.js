@@ -58,21 +58,34 @@ export function createPower(root, fx) {
   // the whole hand burns with living energy: flames climb every bone, arcs jump between the fingers
   const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
   let aura = [], arcT = 0;
+  const SPR = {};
+  function sprite(key, inner, mid) {
+    if (SPR[key]) return SPR[key];
+    const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d");
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, inner); gr.addColorStop(0.35, mid); gr.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return (SPR[key] = c);
+  }
+  const BLUE = () => sprite("blue", "rgba(235,248,255,1)", "rgba(80,170,255,.75)");
+  const HOT = () => sprite("hot", "rgba(255,255,240,1)", "rgba(255,150,60,.8)");
+  const FIRE = () => sprite("fire", "rgba(255,240,180,1)", "rgba(255,90,20,.75)");
+  function stamp(img, x, y, r, a) { ctx.globalAlpha = a; ctx.drawImage(img, x - r, y - r, r * 2, r * 2); }
+
   function powerHand(P, dt, now, heat) {
     // heat: 0 calm blue fire, 1 white-hot (fist charging)
-    const n = 2 + Math.round(heat * 2);
+    const n = 1 + Math.round(heat);
     for (const [a, b] of BONES) for (let k = 0; k < n; k++) {
       const f = Math.random(), x = P[a][0] + (P[b][0] - P[a][0]) * f, y = P[a][1] + (P[b][1] - P[a][1]) * f;
-      aura.push({ x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 60, vy: -80 - Math.random() * 160 * (1 + heat), life: 1, d: 0.22 + Math.random() * 0.28, r: 3 + Math.random() * 5 + heat * 4 });
+      aura.push({ x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6, vx: (Math.random() - 0.5) * 60, vy: -90 - Math.random() * 180 * (1 + heat), life: 1, d: 0.25 + Math.random() * 0.3, r: 9 + Math.random() * 9 + heat * 10 });
     }
-    if (aura.length > 1600) aura.splice(0, aura.length - 1600);
+    if (aura.length > 700) aura.splice(0, aura.length - 700);
+    const img = heat > 0.4 ? HOT() : BLUE();
     for (let i = aura.length - 1; i >= 0; i--) {
       const q = aura[i]; q.life -= dt / q.d; if (q.life <= 0) { aura.splice(i, 1); continue; }
       q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.92;
-      const l = q.life, r = q.r * (0.4 + l);
-      const hue = heat > 0.4 ? 30 + l * 25 : 205 - l * 15, light = 50 + l * 40;
-      ctx.fillStyle = `hsla(${hue},100%,${light}%,${0.55 * l})`; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 6.283); ctx.fill();
+      stamp(img, q.x, q.y, q.r * (0.5 + q.life), 0.7 * q.life);
     }
+    ctx.globalAlpha = 1;
     // a bright core along the bones
     ctx.lineCap = "round";
     for (const [w, al] of [[26, 0.08], [12, 0.25], [4, 0.9]]) {
@@ -123,7 +136,7 @@ export function createPower(root, fx) {
   /* ---------- frame ---------- */
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    const W = view.W, H = view.H, d = view.dpr;
+    const W = view.W, H = view.H, d = 1;
     if (fx.width !== Math.round(W * d)) { fx.width = Math.round(W * d); fx.height = Math.round(H * d); }
     const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake; shake *= Math.pow(0.02, dt);
     punch *= Math.pow(0.004, dt);
@@ -260,7 +273,7 @@ export function createPower(root, fx) {
       const q = flames[i]; q.life -= dt / q.d; if (q.life <= 0) { flames.splice(i, 1); continue; }
       q.vx *= Math.pow(0.07, dt); q.vy = q.vy * Math.pow(0.07, dt) - 300 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
       const r = q.r * (1 + (1 - q.life) * 4);
-      glow(q.x, q.y, r * 2, [[0, `hsla(${45 * q.life},100%,${55 + q.life * 35}%,${0.5 * q.life})`], [1, "rgba(255,60,0,0)"]]);
+      stamp(FIRE(), q.x, q.y, r * 2.4, 0.75 * q.life); ctx.globalAlpha = 1;
     }
     if (shield > 0.03) {
       ctx.save(); ctx.translate(shX, shY);
@@ -317,7 +330,7 @@ export function createPower(root, fx) {
     for (let i = smoke.length - 1; i >= 0; i--) {
       const q = smoke[i]; q.life -= dt / q.d; if (q.life <= 0) { smoke.splice(i, 1); continue; }
       q.vx *= Math.pow(0.3, dt); q.vy = q.vy * Math.pow(0.3, dt) - 30 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.r += 40 * dt;
-      glow(q.x, q.y, q.r, [[0, `rgba(40,36,34,${0.35 * q.life})`], [1, "rgba(40,36,34,0)"]]);
+      stamp(sprite("smoke", "rgba(40,36,34,.9)", "rgba(40,36,34,.45)"), q.x, q.y, q.r, 0.4 * q.life); ctx.globalAlpha = 1;
     }
     ctx.globalCompositeOperation = "lighter";
     for (let i = streams.length - 1; i >= 0; i--) {
