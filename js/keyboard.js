@@ -24,7 +24,7 @@ export function createKeyboard(root, fx) {
   let text = load("text2", ""), skin = load("skin", "hacker"), colorI = load("color", { hacker: 0, clean: 0 });
   let shift = /(^|[.!?]\s|\n)$/.test(text), layer = "abc", rects = [], hover = null, lock = null, lastPress = 0, holdT = 0, repT = 0, unsub = null;
   const parts = [], trail = [], cur = [0, 0], tgt = [0, 0];
-  let curOn = false, decoding = null, drops = [], rainT = 0, hudT = 0;
+  let curOn = false, decoding = null, drops = [], rainT = 0, hudT = 0, fistT = 0;
   // positions you placed things at (fist moves the keyboard, pinch on the text moves the text)
   const kbOff = load("kbOff", { x: 0, y: 0 }), kbShow = { ...kbOff }, tOff = load("tOff", { x: 0, y: 0 }), tShow = { ...tOff };
   let kbGrab = null, tGrab = null, kbB = { minX: 0, maxX: 0, minY: 0, maxY: 0 }, tB = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
@@ -42,7 +42,9 @@ export function createKeyboard(root, fx) {
         const b = document.createElement("div"); b.className = "key"; b.dataset.k = k;
         if (k === "space") b.classList.add("wide");
         if (["⇧", "⌫", "⏎", "123", "ABC", "◐", "◈"].includes(k)) b.classList.add("mod");
-        b.textContent = k === "space" ? "SPACE" : k === "◐" ? "COLOR" : k === "◈" ? "MODE" : k.length === 1 && layer === "abc" && shift ? k.toUpperCase() : k;
+        if (k === "◐") b.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="f"/></svg>';
+        else if (k === "◈") b.innerHTML = '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M8 10h1M11 10h1M14 10h1M8 14h8"/></svg>';
+        else b.textContent = k === "space" ? "" : k.length === 1 && layer === "abc" && shift ? k.toUpperCase() : k;
         if (k === "⇧" && shift) b.classList.add("on");
         r.appendChild(b);
       });
@@ -76,7 +78,7 @@ export function createKeyboard(root, fx) {
     const shown = text.length > 80 ? text.slice(-80) : text;
     textEl.innerHTML = "";
     const pr = document.createElement("span"); pr.className = "pr"; pr.textContent = "›"; textEl.append(pr);
-    if (!text) { const ph = document.createElement("span"); ph.className = "ph"; ph.textContent = skin === "hacker" ? "awaiting input_" : "Hawa mein likho"; textEl.append(ph); }
+    if (!text) { const ph = document.createElement("span"); ph.className = "ph"; ph.textContent = "Hawa mein likho"; textEl.append(ph); }
     else {
       const body = document.createElement("span"); body.textContent = decodeLast ? shown.slice(0, -1) : shown; textEl.append(body);
       if (decodeLast) { const last = document.createElement("span"); last.className = "dec"; last.textContent = rnd(); textEl.append(last); decode(last, shown.slice(-1)); }
@@ -135,7 +137,7 @@ export function createKeyboard(root, fx) {
 
   function onHand(type, t) {
     if (type === "pinchdown" && !kbGrab) {
-      const target = lock || hover;
+      const target = hover;
       if (target && t - lastPress > 110) { lastPress = t; holdT = t; repT = t; press(target); }
       else if (!target && overTerm(cur[0], cur[1])) { tGrab = { x: cur[0], y: cur[1], ox: tOff.x, oy: tOff.y }; term.classList.add("grab"); tick(900, 0.08); buzz(12); }
     }
@@ -161,7 +163,6 @@ export function createKeyboard(root, fx) {
     if (fx.width !== Math.round(W * d)) { fx.width = Math.round(W * d); fx.height = Math.round(H * d); }
     ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, W, H);
     drawRain(now);
-    if (now - hudT > 500) { hudT = now; hudR.textContent = `TRK ${tracker.fps || "--"} FPS · ${tracker.latency ? tracker.latency.toFixed(0) : "--"} MS`; }
 
     if (hand.present) {
       const P = predicted(now);
@@ -169,9 +170,10 @@ export function createKeyboard(root, fx) {
       if (!curOn) { cur[0] = tgt[0]; cur[1] = tgt[1]; curOn = true; }
       const k = 1 - Math.exp(-dt * 30); cur[0] += (tgt[0] - cur[0]) * k; cur[1] += (tgt[1] - cur[1]) * k;
 
-      // fist = carry the keyboard like a toy
-      const fist = hand.open < 1.3 || (kbGrab && hand.open < 1.55);
-      if (fist && !tGrab) {
+      // fist held still for a moment = carry the keyboard like a toy
+      const fist = hand.open < 1.18 || (kbGrab && hand.open < 1.5);
+      if (fist && !hand.pinched) { if (!fistT) fistT = now; } else if (!kbGrab) fistT = 0;
+      if (fist && !tGrab && (kbGrab || now - fistT > 380)) {
         if (!kbGrab) { kbGrab = { x: P[9][0], y: P[9][1], ox: kbOff.x, oy: kbOff.y }; kb.classList.add("grab"); setHover(null); lock = null; tick(500, 0.1); buzz(15); }
         kbOff.x = clamp(kbGrab.ox + (P[9][0] - kbGrab.x) * 1.35, kbB.minX, kbB.maxX);
         kbOff.y = clamp(kbGrab.oy + (P[9][1] - kbGrab.y) * 1.35, kbB.minY, kbB.maxY);
@@ -180,25 +182,18 @@ export function createKeyboard(root, fx) {
         tOff.x = clamp(tGrab.ox + (cur[0] - tGrab.x) * 1.2, tB.minX, tB.maxX);
         tOff.y = clamp(tGrab.oy + (cur[1] - tGrab.y) * 1.2, tB.minY, tB.maxY);
       }
-      // aim assist: once fingers start closing, the key under them is locked in
-      if (!kbGrab && !tGrab) {
-        if (hand.pinch > 0.42 && !hand.pinched) { if (!lock) lock = hover; }
-        else if (hand.pinch < 0.3) lock = null;
-        if (!lock && !hand.pinched) setHover(keyAt(cur[0], cur[1], hover));
-      }
+      if (!kbGrab && !tGrab && !hand.pinched) setHover(keyAt(cur[0], cur[1], hover));
       if (hand.pinched && hover && hover.dataset.k === "⌫" && now - holdT > 520 && now - repT > 75) { repT = now; press(hover); }
       trail.push([P[8][0], P[8][1], now]);
       drawHand(ctx, P, col, 0.8);
-      // cursor, pulled toward the key it is on
-      let x = cur[0], y = cur[1];
-      const kh = lock || hover;
-      if (kh) { const r = kh.getBoundingClientRect(); x += (r.left + r.width / 2 - x) * 0.35; y += (r.top + r.height / 2 - y) * 0.35; }
+      // the ball sits exactly where the key is read from
+      const x = cur[0], y = cur[1];
       ctx.save(); ctx.globalCompositeOperation = "lighter";
       const p = hand.pinch, R = 18 - p * 7;
       ctx.strokeStyle = `rgba(${col},.45)`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, R + 6, 0, 6.283); ctx.stroke();
       ctx.strokeStyle = `rgba(${col},1)`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, R, -1.571, -1.571 + 6.283 * Math.max(0.05, p)); ctx.stroke();
-      ctx.fillStyle = hand.pinched || lock ? `rgba(${col},1)` : "rgba(255,255,255,.95)";
-      ctx.beginPath(); ctx.arc(x, y, hand.pinched ? 7 : lock ? 5 : 3, 0, 6.283); ctx.fill();
+      ctx.fillStyle = hand.pinched ? `rgba(${col},1)` : "rgba(255,255,255,.95)";
+      ctx.beginPath(); ctx.arc(x, y, hand.pinched ? 7 : 3, 0, 6.283); ctx.fill();
       ctx.restore();
     } else endKbGrab();
 

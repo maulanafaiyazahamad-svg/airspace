@@ -143,10 +143,9 @@ export const hand = window.__hand = {
     const tr = dist3(G[4], G[5]) / palm3;
     if (this.thumbOut && tr < 0.42) this.thumbOut = false; else if (!this.thumbOut && tr > 0.58) this.thumbOut = true;
     const pr = dist3(G[4], G[8]) / palm3;
-    this.pinch = Math.max(0, Math.min(1, (0.85 - pr) / (0.85 - 0.33)));
+    this.pinch = Math.max(0, Math.min(1, (0.8 - pr) / (0.8 - 0.28)));
     const was = this.pinched;
-    // easy to start, hard to drop: a light touch of thumb and index counts
-    if (!this.pinched && pr < 0.34 && this.open > 1.2) this.pinched = true; else if (this.pinched && pr > 0.55) this.pinched = false;
+    if (!this.pinched && pr < 0.28) this.pinched = true; else if (this.pinched && pr > 0.5) this.pinched = false;
     this.finish(t, first, was);
   },
   finish(t, first, was) {

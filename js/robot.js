@@ -413,7 +413,7 @@ export function createRobot(root, glCanvas, fx) {
     /* --- open, fist, open: lock on, crush, burst. Never aims, never misses. --- */
     if (P) lostAt = 0; else if (!lostAt) lostAt = now;
     if (fistNow && intactCount && !carry && (gripOn || now - armedAt < 1500)) {
-      if (!gripOn) { gripOn = true; grip = 0; rum = rumble(); }
+      if (!gripOn) { gripOn = true; grip = 0; boom(0.25, 0.35); }
       gripSeen = now; grip = Math.min(1, grip + rdt / 0.42);
       if (Math.random() < grip * 0.6) buzz(14);
     } else if (gripOn) {
@@ -504,6 +504,13 @@ export function createRobot(root, glCanvas, fx) {
       A.rotation.x = -1.45 * k; A.userData.elbow.rotation.x = -0.25 + 0.25 * k;
     }
 
+    // raw power crawling over the armour, plasma held in both palms
+    if (intactCount && Math.random() < rdt * 5) {
+      const live = Object.values(parts).filter((p) => !p.userData.broken);
+      const p = live[(Math.random() * live.length) | 0], m = p.userData.meshes[(Math.random() * p.userData.meshes.length) | 0];
+      m.getWorldPosition(tv); arc(tv, 0.35);
+    }
+    for (const n of ["armL", "armR"]) if (!parts[n].userData.broken && Math.random() < 0.5) { parts[n].userData.palm.getWorldPosition(tv); emit(tv, 1, 0.5, COLD, 0.3, -0.5, 0.6); }
     // light and thrusters only; the suit itself holds still
     glowMat.emissiveIntensity = 2.8 + Math.sin(t * 5) * 0.3 + grip * 2;
     glowMat.emissive.setHex(grip > 0.4 ? 0xff5a3a : 0x55e4ff);
@@ -590,6 +597,7 @@ export function createRobot(root, glCanvas, fx) {
     shake = Math.max(shake, 0.16); boom(0.35, 0.4); tick(2600, 0.12, 0.15); buzz(35);
   }
   function laser() {
+    return { set() {}, stop() {} };   // no droning sound; the hit itself is heard
     const ac = audio(); if (!ac) return { set() {}, stop() {} };
     const o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
     o.type = "sawtooth"; o.frequency.value = 220; o2.type = "square"; o2.frequency.value = 223; f.type = "bandpass"; f.frequency.value = 1400; f.Q.value = 2; g.gain.value = 0;

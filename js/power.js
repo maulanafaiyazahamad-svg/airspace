@@ -12,7 +12,7 @@ export function createPower(root, fx) {
   const dust = Array.from({ length: N }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, vx: 0, vy: 0, s: 0.6 + Math.random() * 1.6, h: Math.random() }));
   let strokes = [], cur = null, orb = 0, orbX = 0, orbY = 0, squeeze = 0, fistOn = false, armed = 0, openSince = 0;
   let blasts = [], sparks = [], bolts = [], boltT = 0, humSnd = null, shake = 0, flash = 0, hue = 190, swarmOn = false, pointN = 0, vN = 0;
-  let last = performance.now();
+  let last = performance.now(), rockN = 0, threeN = 0, flames = [], fireT = 0, shield = 0, shX = 0, shY = 0, hole = 0, holeT = 0, holeX = 0, holeY = 0;
 
   function blast(x, y, power) {
     blasts.push({ x, y, r: 10, life: 1, p: power });
@@ -45,7 +45,9 @@ export function createPower(root, fx) {
     const pinch = !!P && hand.pinched && !fist;
     pointN = P && e[0] && !e[1] && !e[2] && !pinch && !fist ? pointN + 1 : 0;
     vN = P && e[0] && e[1] && !e[2] && !e[3] && !pinch && !fist ? vN + 1 : 0;
-    const point = pointN > 3, vsign = vN > 3, open = !!P && nExt === 4 && o > 1.65;
+    rockN = P && e[0] && !e[1] && !e[2] && e[3] && !pinch && !fist ? rockN + 1 : 0;
+    threeN = P && e[0] && e[1] && e[2] && !e[3] && !pinch && !fist ? threeN + 1 : 0;
+    const point = pointN > 3, vsign = vN > 3, rock = rockN > 3, three = threeN > 3, open = !!P && nExt === 4 && o > 1.65;
     const palmX = P ? (P[0][0] + P[5][0] + P[9][0] + P[13][0] + P[17][0]) / 5 : 0, palmY = P ? (P[0][1] + P[5][1] + P[9][1] + P[13][1] + P[17][1]) / 5 : 0;
 
     // orb: grows on an open palm, squeezes in a fist, flies on release
@@ -53,8 +55,11 @@ export function createPower(root, fx) {
     if (P) { orbX += (palmX - orbX) * Math.min(1, dt * 25); orbY += (palmY - 40 - orbY) * Math.min(1, dt * 25); }
     if (fist && orb > 0.3 && now - armed < 1500) { if (!fistOn) { fistOn = true; tick(300, 0.2); } squeeze = Math.min(1, squeeze + dt / 0.35); }
     else if (fistOn) { fistOn = false; if ((!P || o > 1.55) && squeeze > 0.4) { blast(orbX, orbY, 0.6 + orb * 0.6); orb = 0; } squeeze = 0; }
+    // black hole: hold a fist with no orb; open it and the hole goes supernova
+    if (fist && !fistOn && orb < 0.3) { if (!holeT) holeT = now; hole = Math.min(1, Math.max(0, (now - holeT - 450) / 900)); holeX = palmX; holeY = palmY; }
+    else { if (hole > 0.6 && (!P || o > 1.55)) { blast(holeX, holeY, 1.7); flash = 1; } holeT = 0; hole = Math.max(0, hole - dt * 3); }
     if (!P || (!open && !fistOn)) orb = Math.max(0, orb - dt * 0.6);
-    if (orb > 0.05) { if (!humSnd) humSnd = hum(); humSnd.set(Math.min(1, orb * 0.8 + squeeze * 0.4)); } else if (humSnd) { humSnd.stop(); humSnd = null; }
+    if (orb >= 1 && !humSnd) { humSnd = true; whoosh(0.25, 0.6); } else if (orb < 0.5) humSnd = null;
 
     // light painting
     if (point) {
@@ -73,6 +78,21 @@ export function createPower(root, fx) {
       tick(4500 + Math.random() * 2000, 0.06); if (Math.random() < 0.3) buzz(8);
     }
 
+    // fire from the fingertips (index + little finger up)
+    if (rock) {
+      for (const [tip, base] of [[8, 5], [20, 17]]) {
+        let dx = P[tip][0] - P[base][0], dy = P[tip][1] - P[base][1]; const L2 = Math.hypot(dx, dy) || 1; dx /= L2; dy /= L2;
+        for (let k = 0; k < 7; k++) {
+          const sp = 500 + Math.random() * 500, a = (Math.random() - 0.5) * 0.45, c = Math.cos(a), si = Math.sin(a);
+          flames.push({ x: P[tip][0], y: P[tip][1], vx: (dx * c - dy * si) * sp, vy: (dx * si + dy * c) * sp, life: 1, d: 0.35 + Math.random() * 0.35, r: 3 + Math.random() * 4 });
+        }
+      }
+      if (now - fireT > 220) { fireT = now; tick(900 + Math.random() * 300, 0.12, 0.2); }
+    }
+    // energy shield (three fingers up)
+    shield += ((three ? 1 : 0) - shield) * Math.min(1, dt * 8);
+    if (three) { shX = palmX; shY = palmY - 30; }
+
     // swarm
     const px = P ? (P[4][0] + P[8][0]) / 2 : 0, py = P ? (P[4][1] + P[8][1]) / 2 : 0;
     if (pinch && !swarmOn) { swarmOn = true; whoosh(0.25, 0.6); }
@@ -82,6 +102,8 @@ export function createPower(root, fx) {
     ctx.globalCompositeOperation = "lighter";
     for (const q of dust) {
       if (swarmOn) { const dx = px - q.x, dy = py - q.y, dd = Math.hypot(dx, dy) || 1; q.vx += (dx / dd) * 2600 * dt + (-dy / dd) * 1900 * dt; q.vy += (dy / dd) * 2600 * dt + (dx / dd) * 1900 * dt; }
+      else if (hole > 0.05) { const dx = holeX - q.x, dy = holeY - q.y, dd = Math.hypot(dx, dy) || 1; q.vx += ((dx / dd) * 3200 + (-dy / dd) * 2600) * hole * dt; q.vy += ((dy / dd) * 3200 + (dx / dd) * 2600) * hole * dt; }
+      else if (shield > 0.3) { const dx = q.x - shX, dy = q.y - shY, dd = Math.hypot(dx, dy); if (dd < 150) { q.vx += (dx / (dd || 1)) * 4000 * dt; q.vy += (dy / (dd || 1)) * 4000 * dt; } }
       else if (P) { const dx = q.x - palmX, dy = q.y - palmY, dd = Math.hypot(dx, dy); if (dd < 140) { q.vx += (dx / (dd || 1)) * 900 * dt; q.vy += (dy / (dd || 1)) * 900 * dt; } }
       q.vx *= Math.pow(swarmOn ? 0.2 : 0.35, dt); q.vy *= Math.pow(swarmOn ? 0.2 : 0.35, dt);
       q.vy += (Math.sin(now / 1400 + q.h * 9) * 6 - 3) * dt;
@@ -108,6 +130,37 @@ export function createPower(root, fx) {
         ctx.strokeStyle = `rgba(${c},${al * b.life})`; ctx.lineWidth = w;
         ctx.beginPath(); ctx.moveTo(b.pts[0][0], b.pts[0][1]); for (const p of b.pts) ctx.lineTo(p[0], p[1]); ctx.stroke();
       }
+    }
+    // flames
+    for (let i = flames.length - 1; i >= 0; i--) {
+      const q = flames[i]; q.life -= dt / q.d; if (q.life <= 0) { flames.splice(i, 1); continue; }
+      q.vx *= Math.pow(0.08, dt); q.vy = q.vy * Math.pow(0.08, dt) - 260 * dt; q.x += q.vx * dt; q.y += q.vy * dt;
+      const r = q.r * (1 + (1 - q.life) * 3);
+      ctx.fillStyle = `hsla(${15 + q.life * 30},100%,${45 + q.life * 40}%,${q.life * 0.55})`; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 6.283); ctx.fill();
+    }
+    // shield
+    if (shield > 0.03) {
+      ctx.save(); ctx.translate(shX, shY);
+      for (let k = 0; k < 3; k++) {
+        const R = (60 + k * 28) * shield, rot = now / (900 - k * 250) * (k % 2 ? -1 : 1);
+        ctx.strokeStyle = `rgba(110,220,255,${0.75 * shield})`; ctx.lineWidth = k === 0 ? 3 : 1.5;
+        ctx.beginPath(); for (let j = 0; j <= 6; j++) { const a = rot + (j * Math.PI) / 3; j ? ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R) : ctx.moveTo(Math.cos(a) * R, Math.sin(a) * R); } ctx.stroke();
+        for (let j = 0; j < 24; j++) { const a = -rot * 1.5 + (j * Math.PI) / 12; ctx.beginPath(); ctx.moveTo(Math.cos(a) * (R + 6), Math.sin(a) * (R + 6)); ctx.lineTo(Math.cos(a) * (R + (j % 3 ? 10 : 16)), Math.sin(a) * (R + (j % 3 ? 10 : 16))); ctx.stroke(); }
+      }
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 130 * shield); g.addColorStop(0, `rgba(110,220,255,${0.25 * shield})`); g.addColorStop(1, "rgba(110,220,255,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 130 * shield, 0, 6.283); ctx.fill();
+      ctx.restore();
+    }
+    // black hole
+    if (hole > 0.02) {
+      const R = 18 + hole * 30;
+      const ring = ctx.createRadialGradient(holeX, holeY, R * 0.9, holeX, holeY, R * 3);
+      ring.addColorStop(0, `rgba(255,170,80,${0.9 * hole})`); ring.addColorStop(0.3, `rgba(255,90,40,${0.4 * hole})`); ring.addColorStop(1, "rgba(255,60,20,0)");
+      ctx.fillStyle = ring; ctx.beginPath(); ctx.arc(holeX, holeY, R * 3, 0, 6.283); ctx.fill();
+      ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(holeX, holeY, R, 0, 6.283); ctx.fill();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(255,220,180,${hole})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(holeX, holeY, R * 2.2, R * 0.55, now / 900, 0, 6.283); ctx.stroke();
+      shake = Math.max(shake, hole * 3);
     }
     // orb
     if (orb > 0.02) {
@@ -139,7 +192,7 @@ export function createPower(root, fx) {
 
   return {
     enter() { root.hidden = false; last = performance.now(); },
-    exit() { root.hidden = true; if (humSnd) { humSnd.stop(); humSnd = null; } ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); },
+    exit() { root.hidden = true; humSnd = null; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
     demoBlast: () => blast(view.W / 2, view.H / 2, 1),
   };
