@@ -60,7 +60,7 @@ $("#flip").addEventListener("click", async () => {
 addEventListener("popstate", () => { if (active) home(); });
 document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => history.pushState({ m: 1 }, "")));
 
-$("#ver").textContent = "Version " + VERSION;
+$("#ver").textContent = "Version " + VERSION + (window.ShahzadNative ? " · " + window.ShahzadNative.source() : "");
 $("#refresh").addEventListener("click", () => { location.replace(location.pathname + "?u=" + Date.now()); });
 // Fully automatic updates: check for a newer version every 30 seconds and reload on our own.
 setInterval(async () => {

@@ -19,7 +19,16 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import android.webkit.JavascriptInterface;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,11 +36,17 @@ import java.util.Map;
 public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START = "https://" + HOST + "/www/index.html";
-    // Live app: every launch pulls the newest code from here, so updates need no reinstall.
-    private static final String REMOTE_HOST = "maulanafaiyazahamad-svg.github.io";
-    private static final String REMOTE_DIR = "/airspace/";
-    private static final String REMOTE = "https://" + REMOTE_HOST + REMOTE_DIR + "index.html";
-    private boolean offline = false;
+    // Live code: every file is fetched fresh from the first source that answers, so updates need no
+    // reinstall. Several sources, because some mobile networks block one or another of these hosts.
+    private static final String[] SOURCES = {
+            "https://maulanafaiyazahamad-svg.github.io/airspace/",
+            "https://cdn.jsdelivr.net/gh/maulanafaiyazahamad-svg/airspace@main/",
+            "https://raw.githubusercontent.com/maulanafaiyazahamad-svg/airspace/main/",
+    };
+    private static final String[] SOURCE_NAMES = { "github", "jsdelivr", "raw" };
+    private volatile int good = 0;
+    private volatile long offlineUntil = 0;
+    private volatile String source = "app";
     private static final int REQ_CAMERA = 7;
 
     private WebView web;
@@ -65,27 +80,11 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
-                if (HOST.equals(u.getHost())) return serve(u);
-                // Big files that never change (model, libraries) come from inside the APK: fast and no data used.
-                String p = u.getPath();
-                if (REMOTE_HOST.equals(u.getHost()) && p != null && p.startsWith(REMOTE_DIR)) {
-                    String rel = p.substring(REMOTE_DIR.length());
-                    if (rel.startsWith("vendor/") || rel.equals("hand_landmarker.task")) return asset("www/" + rel);
-                }
-                return null;
+                return HOST.equals(u.getHost()) ? serve(u) : null;
             }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
-                String h = req.getUrl().getHost();
-                return !(HOST.equals(h) || REMOTE_HOST.equals(h));
-            }
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest req, android.webkit.WebResourceError err) {
-                if (req.isForMainFrame()) goOffline(view);
-            }
-            @Override
-            public void onReceivedHttpError(WebView view, WebResourceRequest req, WebResourceResponse res) {
-                if (req.isForMainFrame() && res.getStatusCode() >= 400) goOffline(view);
+                return !HOST.equals(req.getUrl().getHost());
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -98,15 +97,11 @@ public class MainActivity extends Activity {
             }
         });
 
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface public String source() { return source; }
+        }, "ShahzadNative");
         if (!hasCamera()) askCamera();
-        web.loadUrl(REMOTE);
-    }
-
-    /** No internet: run the copy that shipped inside the APK. */
-    private void goOffline(WebView view) {
-        if (offline) return;
-        offline = true;
-        view.loadUrl(START);
+        web.loadUrl(START);
     }
 
     private WebResourceResponse asset(String path) {
@@ -127,6 +122,18 @@ public class MainActivity extends Activity {
         String path = uri.getPath();
         if (path == null || path.contains("..")) return null;
         if (path.startsWith("/")) path = path.substring(1);
+        if (path.startsWith("www/")) {
+            String rel = path.substring(4);
+            // Big files that never change (model, libraries, icons) always come from inside the APK.
+            boolean fixed = rel.startsWith("vendor/") || rel.equals("hand_landmarker.task") || rel.startsWith("icons/");
+            if (!fixed) {
+                byte[] body = fetchLive(rel);
+                File cached = new File(getCacheDir(), "live/" + rel);
+                if (body != null) save(cached, body);
+                else if (cached.exists()) body = read(cached);
+                if (body != null) return bytes(rel, body);
+            }
+        }
         try {
             InputStream in = getAssets().open(path);
             WebResourceResponse r = new WebResourceResponse(mime(path), mime(path).startsWith("text") || mime(path).endsWith("javascript") ? "utf-8" : null, in);
@@ -138,6 +145,54 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
         }
+    }
+
+    private byte[] fetchLive(String rel) {
+        if (System.currentTimeMillis() < offlineUntil) return null;
+        for (int k = 0; k < SOURCES.length; k++) {
+            int i = (good + k) % SOURCES.length;
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL(SOURCES[i] + rel + "?t=" + System.currentTimeMillis()).openConnection();
+                c.setConnectTimeout(3500); c.setReadTimeout(6000); c.setUseCaches(false);
+                c.setRequestProperty("Cache-Control", "no-cache");
+                if (c.getResponseCode() != 200) continue;
+                InputStream in = c.getInputStream();
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[16384]; int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                in.close();
+                good = i; source = SOURCE_NAMES[i];
+                return out.toByteArray();
+            } catch (Exception e) {
+                // try the next source
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+        offlineUntil = System.currentTimeMillis() + 20000;
+        source = "offline";
+        return null;
+    }
+
+    private WebResourceResponse bytes(String path, byte[] body) {
+        WebResourceResponse r = new WebResourceResponse(mime(path), "utf-8", new ByteArrayInputStream(body));
+        Map<String, String> h = new HashMap<>();
+        h.put("Cache-Control", "no-store");
+        r.setResponseHeaders(h);
+        return r;
+    }
+
+    private static void save(File f, byte[] b) {
+        try { f.getParentFile().mkdirs(); FileOutputStream o = new FileOutputStream(f); o.write(b); o.close(); } catch (Exception ignored) { }
+    }
+
+    private static byte[] read(File f) {
+        try {
+            FileInputStream in = new FileInputStream(f); ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[16384]; int n; while ((n = in.read(buf)) > 0) out.write(buf, 0, n); in.close();
+            return out.toByteArray();
+        } catch (Exception e) { return null; }
     }
 
     private static String mime(String p) {
