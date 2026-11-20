@@ -483,26 +483,27 @@ export function createRobot(root, glCanvas, fx) {
     const nExt = e.filter(Boolean).length;
     // read the hand by its closest sign, so a pointing finger is never mistaken for a fist
     const sg = P ? hand.sign : "none";
-    const fistNow = !!P && (sg === "fist" || (gripOn && sg !== "open" && o < FIST_OUT));
+    // a fist: the sign says so, or the fingers are clearly curled (but never a pointing or V hand)
+    const fistNow = !!P && (sg === "fist" || (o < 1.28 && sg !== "point" && sg !== "v") || (gripOn && sg !== "open" && o < FIST_OUT));
     const pinchNow = !!P && hand.pinched && !fistNow;
     // a gesture has to hold for a few frames before it acts, so passing shapes do nothing
     pointN = sg === "point" && !pinchNow ? pointN + 1 : 0;
     vN = sg === "v" && !pinchNow ? vN + 1 : 0;
     const pointNow = pointN > 4, vNow = vN > 4;
     // step 1 of the burst: a clearly open hand arms it
-    if (sg === "open") { if (!openSince) openSince = now; if (now - openSince > 180) armedAt = now; } else openSince = 0;
+    if (sg === "open" || (P && o > 1.55 && nExt >= 3)) { if (!openSince) openSince = now; if (now - openSince > 180) armedAt = now; } else openSince = 0;
     cooldown -= rdt;
 
     /* --- open, fist, open: lock on, crush, burst. Never aims, never misses. --- */
     if (P) lostAt = 0; else if (!lostAt) lostAt = now;
-    if (fistNow && intactCount && !carry && (gripOn || now - armedAt < 1500)) {
+    if (fistNow && intactCount && !carry && (gripOn || now - armedAt < 2500)) {
       if (!gripOn) { gripOn = true; grip = 0; }
       gripSeen = now; grip = Math.min(1, grip + rdt / 0.42);
       if (Math.random() < grip * 0.6) buzz(14);
     } else if (gripOn) {
-      const reopened = P && sg === "open";
+      const reopened = P && (sg === "open" || o > 1.5 || nExt >= 3);
       const vanished = !P && now - lostAt > 60 && grip > 0.6;   // a fast flick can blur the hand out of view
-      if ((reopened || vanished) && grip > 0.35) { gripOn = false; armedAt = 0; shatter(Math.max(0.6, grip)); grip = 0; }
+      if ((reopened || vanished) && grip > 0.3) { gripOn = false; armedAt = 0; shatter(Math.max(0.6, grip)); grip = 0; }
       else if (now - gripSeen > 700) { gripOn = false; }
     }
     if (!gripOn) grip = Math.max(0, grip - rdt * 4);
@@ -702,6 +703,7 @@ export function createRobot(root, glCanvas, fx) {
     exit() { root.hidden = true; glCanvas.hidden = true; if (rum) { rum.stop(); rum = null; } if (laserSnd) { laserSnd.stop(); laserSnd = null; } gripOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
     shatter: () => inited && shatter(1),
+    debug: () => ({ gripOn, grip, armedAt, intactCount, sign: hand.sign, open: hand.open }),
     screenOf: (n) => { const p = parts[n]; if (!p || !ready) return [view.W / 2, view.H / 2]; p.updateMatrixWorld(true); const px = proxies.find((q) => q.userData.part === p); const v = new THREE.Vector3(); px.getWorldPosition(v); v.project(camera); return [(v.x * 0.5 + 0.5) * view.W, (-v.y * 0.5 + 0.5) * view.H]; },
     rebuild: () => inited && rebuild(),
     breakPart: (n) => inited && breakPart(parts[n], new THREE.Vector3().setFromMatrixPosition(parts[n].matrixWorld)),
