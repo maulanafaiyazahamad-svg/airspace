@@ -224,3 +224,8 @@ body:not(.at-home) #homeBg { display: none; }
 #lamp[data-s="on"] { background: #2dff8a; box-shadow: 0 0 0 3px rgba(0,0,0,.35), 0 0 14px #2dff8a; }
 #lamp[data-s="wait"] { animation: lampWait 1s ease-in-out infinite; }
 @keyframes lampWait { 50% { opacity: .35; } }
+
+#bar { gap: 10px; }
+#bar #lamp { margin: 0 auto; }
+#torch.on { background: rgba(255,214,90,.9); border-color: #ffd65a; }
+#torch.on svg { stroke: #1a1400; fill: #1a1400; }

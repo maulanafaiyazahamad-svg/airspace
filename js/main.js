@@ -1,4 +1,4 @@
-import { view, startCamera, cameraOn, loadTracker, tracker, audio } from "./core.js";
+import { view, startCamera, cameraOn, loadTracker, tracker, audio, light, setTorch } from "./core.js";
 import { createKeyboard } from "./keyboard.js";
 import { createRobot } from "./robot.js";
 import { createPower } from "./power.js";
@@ -109,7 +109,9 @@ function drawHome(now) {
   function end() { el.classList.add("done"); setTimeout(() => clearInterval(rain), 700); }
 })();
 
-const lamp = $("#lamp");
+const lamp = $("#lamp"), torchBtn = $("#torch");
+document.addEventListener("shahzad:camera", () => { torchBtn.hidden = !light.canTorch; torchBtn.classList.toggle("on", light.torch); });
+torchBtn.addEventListener("click", async () => { light.userTorch = !light.torch; await setTorch(!light.torch); });
 function loop(now) {
   if (active) active.frame(now); else drawHome(now);
   const st = !tracker.ready ? "wait" : window.__hand.present ? "on" : "off";

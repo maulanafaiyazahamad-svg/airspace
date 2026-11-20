@@ -26,6 +26,51 @@ export async function startCamera(facing = view.facing) {
   await video.play();
   if (!video.videoWidth) await new Promise((r) => video.addEventListener("loadedmetadata", r, { once: true }));
   hand.reset();
+  tuneCamera();
+}
+
+/* ---------- camera tuning: focus, exposure, torch ---------- */
+export const light = { level: 1, torch: false, canTorch: false, userTorch: null, boost: false };
+async function tuneCamera() {
+  const track = stream && stream.getVideoTracks()[0]; if (!track) return;
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  const adv = {};
+  if (caps.focusMode && caps.focusMode.includes("continuous")) adv.focusMode = "continuous";
+  if (caps.exposureMode && caps.exposureMode.includes("continuous")) adv.exposureMode = "continuous";
+  if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes("continuous")) adv.whiteBalanceMode = "continuous";
+  try { if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] }); } catch {}
+  light.canTorch = !!caps.torch; light.torch = false;
+  document.dispatchEvent(new Event("shahzad:camera"));
+}
+export async function setTorch(on) {
+  const track = stream && stream.getVideoTracks()[0]; if (!track || !light.canTorch) return false;
+  try { await track.applyConstraints({ advanced: [{ torch: !!on }] }); light.torch = !!on; } catch { return false; }
+  document.dispatchEvent(new Event("shahzad:camera"));
+  return true;
+}
+// how bright the room is (0..1), measured a couple of times a second on a tiny copy of the frame
+const meter = document.createElement("canvas"); meter.width = 32; meter.height = 24;
+const mctx = meter.getContext("2d", { willReadFrequently: true });
+setInterval(() => {
+  if (!stream || !video.videoWidth) return;
+  try {
+    mctx.drawImage(video, 0, 0, 32, 24); const d = mctx.getImageData(0, 0, 32, 24).data; let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+    light.level = sum / (d.length / 4) / 255;
+  } catch { return; }
+  light.boost = light.level < 0.33;
+  // a dark room: switch the back camera's torch on by itself (unless the user switched it off)
+  if (light.level < 0.2 && !light.torch && light.canTorch && view.facing === "environment" && light.userTorch !== false) setTorch(true);
+}, 700);
+// a brightened copy of the frame for the tracker when the room is dim
+const lift = document.createElement("canvas"), lctx = lift.getContext("2d");
+function trackerInput() {
+  if (!light.boost) return video;
+  if (lift.width !== video.videoWidth) { lift.width = video.videoWidth; lift.height = video.videoHeight; }
+  const k = Math.min(2.6, 0.45 / Math.max(0.05, light.level));
+  lctx.filter = `brightness(${k.toFixed(2)}) contrast(1.25)`;
+  lctx.drawImage(video, 0, 0);
+  return lift;
 }
 export const cameraOn = () => !!stream;
 
@@ -93,7 +138,7 @@ function detect() {
   if (landmarker && !rebuilding && video.readyState >= 2 && video.videoWidth) {
     let ts = performance.now(); if (ts <= lastTs) ts = lastTs + 0.1; lastTs = ts;
     try {
-      const res = landmarker.detectForVideo(video, ts);
+      const res = landmarker.detectForVideo(trackerInput(), ts);
       tracker.latency = tracker.latency * 0.9 + (performance.now() - ts) * 0.1;
       errRun = 0;
       hand.update(res, ts);
