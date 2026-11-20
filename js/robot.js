@@ -11,7 +11,7 @@ import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
 import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio } from "./core.js";
 
-const FLOOR = -1.78, CAM_Y = -0.05;
+const FLOOR = -1.5, CAM_Y = 0;
 const FIST_IN = 1.32, FIST_OUT = 1.55;   // hand.open thresholds (3D finger reach ratio)
 
 export function createRobot(root, glCanvas, fx) {
@@ -20,7 +20,8 @@ export function createRobot(root, glCanvas, fx) {
   let renderer, scene, camera, rig, body, parts = {}, proxies = [], debris = [], tweens = [], flames = [], arcs = [];
   let sparks, flash, wave, glowMat, eyeMat, reactorLight, ring, inited = false, last = performance.now(), TOTAL = 1, intactCount = 0;
   let yawT = 0, pitchT = 0, drag = null, carry = null, aim = null, charge = 0, cooldown = 0, wasPinch = false;
-  let openSince = 0, armedAt = 0, pointN = 0, vN = 0, dentT = 0;
+  let openSince = 0, armedAt = 0, pointN = 0, vN = 0, dentT = 0, move = null, imageSuit = false, ready = true;
+  const posT = { x: 0, y: 0 };
   // phone orientation, so the suit stays put in the room while the phone moves
   const gyro = { on: false, a0: 0, b0: 0, yaw: 0, pitch: 0, ty: 0, tp: 0 };
   addEventListener("deviceorientation", (e) => {
@@ -63,8 +64,8 @@ export function createRobot(root, glCanvas, fx) {
     const rimC = new THREE.DirectionalLight(0x5fe6ff, 3.2); rimC.position.set(-4, 2.5, -3); scene.add(rimC);
     const rimR = new THREE.DirectionalLight(0xff4a3a, 1.6); rimR.position.set(4, 1, -4); scene.add(rimR);
     rig = new THREE.Group(); scene.add(rig);
-    body = new THREE.Group(); body.position.y = 0.15; rig.add(body);
-    buildSuit();
+    body = new THREE.Group(); rig.add(body);
+    buildImageSuit();
     buildFx();
     resize(); addEventListener("resize", resize);
     inited = true;
@@ -74,7 +75,7 @@ export function createRobot(root, glCanvas, fx) {
     renderer.setSize(view.W, view.H, false);
     camera.aspect = view.W / view.H;
     const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const dist = Math.max((3.1 / 0.74) / 2 / tan, (2.0 / 0.9) / (2 * tan * camera.aspect));
+    const dist = Math.max((3.0 / 0.76) / 2 / tan, (2.25 / 0.92) / (2 * tan * camera.aspect));
     camera.position.set(0, CAM_Y, dist); camera.rotation.set(0, 0, 0); camera.rotation.order = "YXZ";
     camera.updateProjectionMatrix();
   }
@@ -195,6 +196,73 @@ export function createRobot(root, glCanvas, fx) {
     TOTAL = intactCount = Object.values(parts).reduce((n, p) => n + p.userData.meshes.length, 0);
   }
 
+  /* ---------------- your robot, built from your own picture ---------------- */
+  function buildImageSuit() {
+    imageSuit = true; ready = false;
+    glowMat = new THREE.MeshStandardMaterial({ color: 0x041218, emissive: 0x55e4ff, emissiveIntensity: 3 });
+    eyeMat = glowMat;
+    reactorLight = new THREE.PointLight(0x5fe6ff, 0, 1); scene.add(reactorLight);
+    const base = new URL("../assets/robot/", import.meta.url);
+    fetch(new URL("parts.json", base)).then((r) => r.json()).then(async (meta) => {
+      const HEIGHT = 3.0, s = HEIGHT / meta.H, loader = new THREE.TextureLoader();
+      const names = ["torso", "legR", "legL", "armR", "armL", "head"];
+      await Promise.all(names.map((n, i) => new Promise((res) => {
+        const q = meta.parts[n];
+        loader.load(new URL(n + ".png", base).href, (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+          const front = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.06, side: THREE.DoubleSide });
+          const back = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.06, color: 0x1a1d22, side: THREE.DoubleSide });
+          const g = new THREE.Group(); g.position.set((q.x + q.w / 2 - meta.W / 2) * s, (meta.H / 2 - (q.y + q.h / 2)) * s, i * 0.004);
+          g.userData = { name: n, image: true, meshes: [], flames: [], broken: false, heat: 0, home: { pos: g.position.clone(), rot: g.rotation.clone() },
+            mats: { armor: front, plate: front, dark: front, glow: glowMat, eye: eyeMat }, tex, w: q.w * s, h: q.h * s };
+          body.add(g); parts[n] = g;
+          const geo = new THREE.PlaneGeometry(q.w * s, q.h * s); geo.computeBoundingSphere();
+          const m = new THREE.Mesh(geo, front);
+          // a dark copy just behind gives the flat picture some body when it turns or flies
+          g.add(m);
+          m.userData = { part: g, r: geo.boundingSphere.radius, home: { parent: g, pos: m.position.clone(), quat: m.quaternion.clone(), scale: m.scale.clone() } };
+          g.userData.meshes.push(m);
+          // which tiles of the picture are solid, for the shatter
+          const c = document.createElement("canvas"), img = tex.image, cols = 7, rows = Math.max(4, Math.round(7 * q.h / q.w));
+          c.width = img.width; c.height = img.height; const cx = c.getContext("2d"); cx.drawImage(img, 0, 0);
+          const data = cx.getImageData(0, 0, c.width, c.height).data, cells = [];
+          for (let ry = 0; ry < rows; ry++) for (let rx = 0; rx < cols; rx++) {
+            const x0 = Math.floor(rx * c.width / cols), y0 = Math.floor(ry * c.height / rows), x1 = Math.floor((rx + 1) * c.width / cols), y1 = Math.floor((ry + 1) * c.height / rows);
+            let solid = 0, n2 = 0; for (let yy = y0; yy < y1; yy += 4) for (let xx = x0; xx < x1; xx += 4) { n2++; if (data[(yy * c.width + xx) * 4 + 3] > 40) solid++; }
+            if (solid / n2 > 0.25) cells.push([rx / cols, ry / rows, 1 / cols, 1 / rows]);
+          }
+          g.userData.cells = cells;
+          res();
+        });
+      })));
+      body.updateMatrixWorld(true);
+      const hidden = new THREE.MeshBasicMaterial({ visible: false });
+      for (const p of Object.values(parts)) {
+        const px = new THREE.Mesh(new THREE.BoxGeometry(p.userData.w * 0.9, p.userData.h * 0.9, 0.4), hidden);
+        px.userData.part = p; p.add(px); proxies.push(px);
+      }
+      TOTAL = intactCount = Object.values(parts).reduce((n, p) => n + p.userData.meshes.length, 0);
+      ready = true;
+    });
+  }
+  // fragments cut from the part's own picture, so it shatters into pieces of itself
+  function tiles(p, n, origin, force, all = false) {
+    const u = p.userData, cells = u.cells || [], list = all ? cells : cells.slice().sort(() => Math.random() - 0.5).slice(0, Math.min(n, 14));
+    const m0 = u.meshes[0]; m0.updateMatrixWorld(true);
+    for (const [cx, cy, cw, ch] of list) {
+      const w = u.w * cw, h = u.h * ch, geo = new THREE.PlaneGeometry(w, h), uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, cx + uv.getX(i) * cw, 1 - (cy + (1 - uv.getY(i)) * ch));
+      geo.computeBoundingSphere();
+      const t = new THREE.Mesh(geo, u.mats.armor);
+      t.position.set(-u.w / 2 + (cx + cw / 2) * u.w, u.h / 2 - (cy + ch / 2) * u.h, 0.01);
+      t.position.applyMatrix4(m0.matrixWorld); t.quaternion.setFromRotationMatrix(m0.matrixWorld);
+      scene.add(t);
+      const v = t.position.clone().sub(origin).normalize().multiplyScalar(force * (0.5 + Math.random() * 1.1));
+      v.y += 1 + Math.random() * 3; v.x += (Math.random() - 0.5) * 2; v.z += 0.5 + Math.random() * 2.2;
+      debris.push({ o: t, v, w: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(14), r: Math.max(w, h) * 0.35, shard: true, age: 0, burn: 0 });
+    }
+  }
+
   /* ---------------- effects ---------------- */
   let dotTex;
   function dot() {
@@ -287,6 +355,7 @@ export function createRobot(root, glCanvas, fx) {
     addDebris(m, v, burn && Math.random() < 0.45);
   }
   function shards(p, n, origin, force) {
+    if (p.userData.image) return tiles(p, n, origin, force);
     const ms = p.userData.meshes, M = p.userData.mats;
     for (let k = 0; k < n; k++) {
       const g = shardGeo[(Math.random() * shardGeo.length) | 0];
@@ -318,7 +387,7 @@ export function createRobot(root, glCanvas, fx) {
     hitBack();
   }
   // the suit answers a hit by raising a remaining arm and firing its palm at you
-  function hitBack() {
+  function hitBack() { return;
     const arms = ["armL", "armR"].filter((n) => !parts[n].userData.broken);
     if (!arms.length || !intactCount || Math.random() < 0.35) return;
     const n = arms[(Math.random() * arms.length) | 0]; strike[n] = performance.now() + 120;
@@ -327,7 +396,11 @@ export function createRobot(root, glCanvas, fx) {
     const left = Object.values(parts).filter((p) => !p.userData.broken); if (!left.length) return;
     const origin = at ? at.clone() : new THREE.Vector3(0, 0.5, -0.25).applyMatrix4(body.matrixWorld);
     const force = 5 + 4.5 * power;
-    for (const p of left) { markBroken(p); shards(p, p.userData.name === "torso" ? 80 : 30, origin, force); [...p.userData.meshes].forEach((m) => launch(m, origin, force, true)); }
+    for (const p of left) {
+      markBroken(p);
+      if (p.userData.image) { tiles(p, 999, origin, force, true); p.userData.meshes.forEach((m) => { m.visible = false; }); }
+      else { shards(p, p.userData.name === "torso" ? 80 : 30, origin, force); [...p.userData.meshes].forEach((m) => launch(m, origin, force, true)); }
+    }
     emit(origin, 900, 9.5, HOT, 1.5); emit(origin, 200, 2.5, FIRE, 1.6, -1.2, 1.6);
     flashAt(origin, 5.5); shock(origin); for (let k = 0; k < 12; k++) arc(origin, 1.2);
     screenFlash("radial-gradient(circle at 50% 45%, #fff, rgba(255,170,90,.6) 40%, transparent 75%)", 0.85);
@@ -342,7 +415,9 @@ export function createRobot(root, glCanvas, fx) {
       if (!p.userData.broken) continue;
       p.userData.broken = false; p.userData.flames.forEach((f) => (f.visible = true));
       for (const m of p.userData.meshes) {
-        const h = m.userData.home; h.parent.attach(m);
+        m.visible = true;
+        const h = m.userData.home; if (m.parent === h.parent && m.position.distanceToSquared(h.pos) < 1e-6) { m.position.copy(h.pos).add(new THREE.Vector3((Math.random() - 0.5) * 3, -2 - Math.random(), 1)); }
+        h.parent.attach(m);
         tweens.push({ m, fp: m.position.clone(), fq: m.quaternion.clone(), fs: m.scale.clone(), h, t0: now + Math.random() * 380, dur: 560 + Math.random() * 300 });
       }
     }
@@ -353,6 +428,10 @@ export function createRobot(root, glCanvas, fx) {
     tick(300, 0.18, 0.5); setTimeout(() => tick(620, 0.15, 0.4), 220); setTimeout(() => tick(1250, 0.12, 0.3), 440);
   }
   function glowPart(p, k, hue) {
+    if (p.userData.image) {
+      const m = p.userData.mats.armor, f = Math.min(1, k * 0.45), warm = hue === 0xff7a20;
+      m.color.setRGB(1 + f * 0.8, 1 - f * (warm ? 0.3 : 0.55), 1 - f * 0.7); return;
+    }
     for (const key of ["armor", "plate", "dark"]) { const m = p.userData.mats[key]; m.emissive.setHex(hue || 0xff3a10); m.emissiveIntensity = k; }
   }
 
@@ -398,18 +477,21 @@ export function createRobot(root, glCanvas, fx) {
     const dt = rdt * timeScale, t = now / 1000, W = view.W, H = view.H, d = view.dpr;
     if (fx.width !== Math.round(W * d)) { fx.width = Math.round(W * d); fx.height = Math.round(H * d); }
     ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, W, H);
+    if (!ready) return;   // the picture parts are still loading
 
     const P = hand.present ? predicted(now) : null;
     const e = hand.ext, o = hand.open;
     const nExt = e.filter(Boolean).length;
-    const fistNow = !!P && (o < FIST_IN || (gripOn && o < FIST_OUT));
+    // read the hand by its closest sign, so a pointing finger is never mistaken for a fist
+    const sg = P ? hand.sign : "none";
+    const fistNow = !!P && (sg === "fist" || (gripOn && sg !== "open" && o < FIST_OUT));
     const pinchNow = !!P && hand.pinched && !fistNow;
     // a gesture has to hold for a few frames before it acts, so passing shapes do nothing
-    pointN = P && e[0] && !e[1] && !e[2] && !pinchNow && !fistNow ? pointN + 1 : 0;
-    vN = P && e[0] && e[1] && !e[2] && !e[3] && !pinchNow && !fistNow ? vN + 1 : 0;
+    pointN = sg === "point" && !pinchNow ? pointN + 1 : 0;
+    vN = sg === "v" && !pinchNow ? vN + 1 : 0;
     const pointNow = pointN > 4, vNow = vN > 4;
     // step 1 of the burst: a clearly open hand arms it
-    if (P && nExt === 4 && o > 1.7) { if (!openSince) openSince = now; if (now - openSince > 180) armedAt = now; } else openSince = 0;
+    if (sg === "open") { if (!openSince) openSince = now; if (now - openSince > 180) armedAt = now; } else openSince = 0;
     cooldown -= rdt;
 
     /* --- open, fist, open: lock on, crush, burst. Never aims, never misses. --- */
@@ -419,7 +501,7 @@ export function createRobot(root, glCanvas, fx) {
       gripSeen = now; grip = Math.min(1, grip + rdt / 0.42);
       if (Math.random() < grip * 0.6) buzz(14);
     } else if (gripOn) {
-      const reopened = P && o > FIST_OUT;
+      const reopened = P && sg === "open";
       const vanished = !P && now - lostAt > 60;     // a fast flick often blurs the hand out of view
       if ((reopened || vanished) && grip > 0.35) { gripOn = false; armedAt = 0; shatter(Math.max(0.6, grip)); grip = 0; }
       else if (now - gripSeen > 700) { gripOn = false; }
@@ -432,18 +514,28 @@ export function createRobot(root, glCanvas, fx) {
     if (pinchNow && !wasPinch) {
       const x = (P[4][0] + P[8][0]) / 2, y = (P[4][1] + P[8][1]) / 2;
       const hit = pick(x, y);
-      if (hit && hit.part.userData.name !== "torso") startCarry(hit.part, hit.point, x, y);
+      if (hit && hit.part.userData.name === "torso") move = { x, y, px: posT.x, py: posT.y };
+      else if (hit) startCarry(hit.part, hit.point, x, y);
       else drag = { x, y, yaw: yawT, pitch: pitchT };
     }
     if (pinchNow) {
       const x = (P[4][0] + P[8][0]) / 2, y = (P[4][1] + P[8][1]) / 2;
       if (carry) moveCarry(x, y, rdt);
-      else if (drag) { yawT = drag.yaw + ((x - drag.x) / W) * 3.8; pitchT = Math.max(-0.45, Math.min(0.45, drag.pitch + ((y - drag.y) / H) * 1.4)); }
+      else if (move) {
+        const k = (2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / H;   // metres per pixel at the suit
+        const hx = (camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * camera.aspect * 0.6;
+        posT.x = Math.max(-hx, Math.min(hx, move.px + (x - move.x) * k));
+        posT.y = Math.max(-1.2, Math.min(1.2, move.py - (y - move.y) * k));
+      }
+      else if (drag) { const lim = imageSuit ? 0.6 : 99; yawT = Math.max(-lim, Math.min(lim, drag.yaw + ((x - drag.x) / W) * 3.8)); pitchT = Math.max(-0.3, Math.min(0.3, drag.pitch + ((y - drag.y) / H) * 1.4)); }
     } else {
       if (carry) dropCarry(carry.vel);
-      drag = null;
+      drag = null; move = null;
     }
     wasPinch = pinchNow;
+    rig.position.x += (posT.x - rig.position.x) * Math.min(1, rdt * 16);
+    rig.position.y += (posT.y - rig.position.y) * Math.min(1, rdt * 16);
+    ring.position.set(rig.position.x, FLOOR + 0.004 + rig.position.y, 0);
     rig.rotation.y += (yawT - rig.rotation.y) * Math.min(1, rdt * 18);
     rig.rotation.x += (pitchT - rig.rotation.x) * Math.min(1, rdt * 18);
 
@@ -491,7 +583,7 @@ export function createRobot(root, glCanvas, fx) {
     const sq = grip;
     body.scale.set(1 - sq * 0.08, 1 - sq * 0.12, 1 - sq * 0.08);
     body.position.x = sq ? (Math.random() - 0.5) * 0.03 * sq : 0;
-    body.position.y = 0.15 + (sq ? (Math.random() - 0.5) * 0.02 * sq : 0);
+    body.position.y = sq ? (Math.random() - 0.5) * 0.02 * sq : 0;
 
     // auto rebuild a few seconds after the last break
     if (intactCount < TOTAL && !carry && !gripOn && now - lastBreak > 3600) rebuild();
@@ -503,24 +595,24 @@ export function createRobot(root, glCanvas, fx) {
       if (s0) { const e2 = (now - s0) / 1000; k = e2 < 0 ? 0 : e2 < 0.18 ? e2 / 0.18 : e2 < 0.55 ? 1 : e2 < 0.85 ? 1 - (e2 - 0.55) / 0.3 : 0;
         if (e2 >= 0.32 && !A.userData.fired) { A.userData.fired = true; fireBack(A); }
         if (e2 > 0.85) { strike[n] = 0; A.userData.fired = false; } }
-      A.rotation.x = -1.45 * k; A.userData.elbow.rotation.x = -0.25 + 0.25 * k;
+      if (A.userData.elbow) { A.rotation.x = -1.45 * k; A.userData.elbow.rotation.x = -0.25 + 0.25 * k; }
     }
 
     // raw power crawling over the armour, plasma held in both palms
-    if (intactCount && Math.random() < rdt * 5) {
+    if (intactCount && Math.random() < rdt * 1.5) {
       const live = Object.values(parts).filter((p) => !p.userData.broken);
       const p = live[(Math.random() * live.length) | 0], m = p.userData.meshes[(Math.random() * p.userData.meshes.length) | 0];
       m.getWorldPosition(tv); arc(tv, 0.35);
     }
-    for (const n of ["armL", "armR"]) if (!parts[n].userData.broken && Math.random() < 0.5) { parts[n].userData.palm.getWorldPosition(tv); emit(tv, 1, 0.5, COLD, 0.3, -0.5, 0.6); }
+    for (const n of ["armL", "armR"]) if (!parts[n].userData.broken && parts[n].userData.palm && Math.random() < 0.5) { parts[n].userData.palm.getWorldPosition(tv); emit(tv, 1, 0.5, COLD, 0.3, -0.5, 0.6); }
     // light and thrusters only; the suit itself holds still
     glowMat.emissiveIntensity = 2.8 + Math.sin(t * 5) * 0.3 + grip * 2;
     glowMat.emissive.setHex(grip > 0.4 ? 0xff5a3a : 0x55e4ff);
     reactorLight.intensity = parts.torso.userData.broken ? 0 : 1.3 + Math.sin(t * 5) * 0.2;
     for (const f of flames) { const k = 0.8 + Math.random() * 0.4; f.scale.set(1, k, 1); f.material.opacity = 0.55 + Math.random() * 0.35; }
     const legsUp = !parts.legL.userData.broken || !parts.legR.userData.broken;
-    ring.material.opacity = legsUp ? 0.65 + Math.sin(t * 6) * 0.15 : ring.material.opacity * 0.95;
-    for (const n of ["legL", "legR"]) if (!parts[n].userData.broken && Math.random() < 0.6) { parts[n].userData.nozzle.getWorldPosition(tv); tv.y -= 0.3; emit(tv, 1, 0.4, COLD, -2.5); }
+    ring.material.opacity = imageSuit ? 0 : legsUp ? 0.65 + Math.sin(t * 6) * 0.15 : ring.material.opacity * 0.95;
+    for (const n of ["legL", "legR"]) if (!parts[n].userData.broken && parts[n].userData.nozzle && Math.random() < 0.6) { parts[n].userData.nozzle.getWorldPosition(tv); tv.y -= 0.3; emit(tv, 1, 0.4, COLD, -2.5); }
 
     // physics
     for (let i = debris.length - 1; i >= 0; i--) {
@@ -551,11 +643,10 @@ export function createRobot(root, glCanvas, fx) {
     if (flashT > 0) { flashT -= rdt * 3; flash.material.opacity = Math.max(0, flashT); flash.scale.setScalar(flash.userData.size * (1.5 - flashT * 0.7)); }
     if (waveT > 0) { waveT -= rdt * 1.6; wave.material.opacity = Math.max(0, waveT); wave.scale.setScalar(0.3 + (1 - waveT) * 4.5); }
     shake = shake * Math.pow(0.03, rdt) + grip * 0.014;
-    gyro.yaw += (gyro.ty - gyro.yaw) * Math.min(1, rdt * 14); gyro.pitch += (gyro.tp - gyro.pitch) * Math.min(1, rdt * 14);
-    camera.rotation.y = gyro.yaw; camera.rotation.x = gyro.pitch;
+    camera.rotation.set(0, 0, 0);
     camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = CAM_Y + (Math.random() - 0.5) * shake;
     senseRoom(now);
-    renderer.render(scene, camera);
+    if (ready) renderer.render(scene, camera);
 
     // overlay: your hand, the laser, the grip tendrils
     if (P) {
@@ -613,7 +704,7 @@ export function createRobot(root, glCanvas, fx) {
     exit() { root.hidden = true; glCanvas.hidden = true; if (rum) { rum.stop(); rum = null; } if (laserSnd) { laserSnd.stop(); laserSnd = null; } gripOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
     shatter: () => inited && shatter(1),
-    screenOf: (n) => { const p = parts[n]; if (!p) return null; p.updateMatrixWorld(true); const px = proxies.find((q) => q.userData.part === p); const v = new THREE.Vector3(); px.getWorldPosition(v); v.project(camera); return [(v.x * 0.5 + 0.5) * view.W, (-v.y * 0.5 + 0.5) * view.H]; },
+    screenOf: (n) => { const p = parts[n]; if (!p || !ready) return [view.W / 2, view.H / 2]; p.updateMatrixWorld(true); const px = proxies.find((q) => q.userData.part === p); const v = new THREE.Vector3(); px.getWorldPosition(v); v.project(camera); return [(v.x * 0.5 + 0.5) * view.W, (-v.y * 0.5 + 0.5) * view.H]; },
     rebuild: () => inited && rebuild(),
     breakPart: (n) => inited && breakPart(parts[n], new THREE.Vector3().setFromMatrixPosition(parts[n].matrixWorld)),
   };
