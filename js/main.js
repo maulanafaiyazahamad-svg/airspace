@@ -1,6 +1,7 @@
 import { view, startCamera, cameraOn, loadTracker, tracker, audio } from "./core.js";
 import { createKeyboard } from "./keyboard.js";
 import { createRobot } from "./robot.js";
+import { VERSION } from "./version.js";
 
 const $ = (s) => document.querySelector(s);
 const fx = $("#fx");
@@ -58,6 +59,9 @@ $("#flip").addEventListener("click", async () => {
 // Android back button inside the app returns to the home screen
 addEventListener("popstate", () => { if (active) home(); });
 document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => history.pushState({ m: 1 }, "")));
+
+$("#ver").textContent = "Version " + VERSION;
+$("#refresh").addEventListener("click", () => { location.replace(location.pathname + "?u=" + Date.now()); });
 
 function loop(now) { active?.frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);

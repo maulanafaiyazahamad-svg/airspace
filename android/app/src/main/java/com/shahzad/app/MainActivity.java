@@ -27,6 +27,11 @@ import java.util.Map;
 public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START = "https://" + HOST + "/www/index.html";
+    // Live app: every launch pulls the newest code from here, so updates need no reinstall.
+    private static final String REMOTE_HOST = "maulanafaiyazahamad-svg.github.io";
+    private static final String REMOTE_DIR = "/airspace/";
+    private static final String REMOTE = "https://" + REMOTE_HOST + REMOTE_DIR + "index.html";
+    private boolean offline = false;
     private static final int REQ_CAMERA = 7;
 
     private WebView web;
@@ -54,15 +59,33 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(false);
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
-                return serve(req.getUrl());
+                Uri u = req.getUrl();
+                if (HOST.equals(u.getHost())) return serve(u);
+                // Big files that never change (model, libraries) come from inside the APK: fast and no data used.
+                String p = u.getPath();
+                if (REMOTE_HOST.equals(u.getHost()) && p != null && p.startsWith(REMOTE_DIR)) {
+                    String rel = p.substring(REMOTE_DIR.length());
+                    if (rel.startsWith("vendor/") || rel.equals("hand_landmarker.task")) return asset("www/" + rel);
+                }
+                return null;
             }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
-                return !HOST.equals(req.getUrl().getHost());
+                String h = req.getUrl().getHost();
+                return !(HOST.equals(h) || REMOTE_HOST.equals(h));
+            }
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest req, android.webkit.WebResourceError err) {
+                if (req.isForMainFrame()) goOffline(view);
+            }
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest req, WebResourceResponse res) {
+                if (req.isForMainFrame() && res.getStatusCode() >= 400) goOffline(view);
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -76,7 +99,27 @@ public class MainActivity extends Activity {
         });
 
         if (!hasCamera()) askCamera();
-        web.loadUrl(START);
+        web.loadUrl(REMOTE);
+    }
+
+    /** No internet: run the copy that shipped inside the APK. */
+    private void goOffline(WebView view) {
+        if (offline) return;
+        offline = true;
+        view.loadUrl(START);
+    }
+
+    private WebResourceResponse asset(String path) {
+        try {
+            InputStream in = getAssets().open(path);
+            WebResourceResponse r = new WebResourceResponse(mime(path), null, in);
+            Map<String, String> h = new HashMap<>();
+            h.put("Access-Control-Allow-Origin", "*");
+            r.setResponseHeaders(h);
+            return r;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private WebResourceResponse serve(Uri uri) {
