@@ -88,6 +88,7 @@ class OneEuro {
   }
 }
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 export { dist };
 
 function toScreen(lm) {
@@ -106,7 +107,7 @@ export const hand = {
   pts: Array.from({ length: 21 }, () => [0, 0]),
   vel: Array.from({ length: 21 }, () => [0, 0]),
   fx: Array.from({ length: 21 }, () => [new OneEuro(), new OneEuro()]),
-  ext: [false, false, false, false], thumbOut: false,
+  ext: [false, false, false, false], ratio: [2, 2, 2, 2], open: 2, thumbOut: false,
   pinch: 0, pinched: false, gesture: "none", _cand: "none", _candN: 0,
   palm: 1, listeners: new Set(),
   reset() { this.present = false; this.fx.forEach((p) => { p[0].x = null; p[1].x = null; }); this.pinched = false; this.gesture = "none"; },
@@ -128,13 +129,20 @@ export const hand = {
     this.present = true; this.seen = t; this.detT = t;
     const P = this.pts;
     this.palm = dist(P[0], P[9]) || 1;
+    // Shape is read in 3D (metres), so a fist or open hand reads the same from any angle.
+    const wl = res.worldLandmarks && res.worldLandmarks[0];
+    const G = wl ? wl.map((q) => [q.x, q.y, q.z]) : P.map((q) => [q[0], q[1], 0]);
+    const palm3 = dist3(G[0], G[9]) || 1;
+    let sum = 0;
     for (let k = 0; k < 4; k++) {
-      const r = dist(P[0], P[TIPS[k]]) / (dist(P[0], P[MCPS[k]]) || 1);
-      if (this.ext[k] && r < 1.38) this.ext[k] = false; else if (!this.ext[k] && r > 1.62) this.ext[k] = true;
+      const r = dist3(G[0], G[TIPS[k]]) / (dist3(G[0], G[MCPS[k]]) || 1);
+      this.ratio[k] = r; sum += r;
+      if (this.ext[k] && r < 1.38) this.ext[k] = false; else if (!this.ext[k] && r > 1.6) this.ext[k] = true;
     }
-    const tr = dist(P[4], P[5]) / this.palm;
+    this.open = sum / 4;
+    const tr = dist3(G[4], G[5]) / palm3;
     if (this.thumbOut && tr < 0.42) this.thumbOut = false; else if (!this.thumbOut && tr > 0.58) this.thumbOut = true;
-    const pr = dist(P[4], P[8]) / this.palm;
+    const pr = dist3(G[4], G[8]) / palm3;
     this.pinch = Math.max(0, Math.min(1, (0.8 - pr) / (0.8 - 0.28)));
     const was = this.pinched;
     if (!this.pinched && pr < 0.27) this.pinched = true; else if (this.pinched && pr > 0.48) this.pinched = false;

@@ -12,10 +12,21 @@ const rnd = () => GLYPHS[(Math.random() * GLYPHS.length) | 0];
 
 export function createKeyboard(root, fx) {
   const ctx = fx.getContext("2d");
-  const kb = root.querySelector("#kb"), textEl = root.querySelector("#kbText"), hint = root.querySelector("#kbHint");
+  const kb = root.querySelector("#kb"), textEl = root.querySelector("#kbText"), stage = root.querySelector("#kbStage"), term = root.querySelector("#term");
   const rain = root.querySelector("#rain"), rctx = rain.getContext("2d"), hudR = root.querySelector("#hudR"), hudL = root.querySelector("#hudL");
-  let text = "", shift = true, layer = "abc", theme = 0, rects = [], hover = null, lastPress = 0, holdT = 0, repT = 0, typedOnce = false, off = null;
+  let text = "", shift = true, layer = "abc", theme = 0, rects = [], hover = null, lastPress = 0, holdT = 0, repT = 0, unsub = null;
   const parts = [], trail = [], cur = [0, 0], tgt = [0, 0]; let curOn = false, decoding = null, drops = [], rainT = 0, hudT = 0;
+  // where you have placed the keyboard (moved with a fist), kept inside the screen
+  const off = { x: 0, y: 0 }; let grab = null, bounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  try { const o = JSON.parse(localStorage.getItem("shahzad.kbpos") || "null"); if (o) { off.x = o.x; off.y = o.y; } } catch {}
+  function placeKb() { stage.style.transform = `translate3d(${off.x}px, ${off.y}px, 0)`; }
+  function measureBounds() {
+    const was = stage.style.transform; stage.style.transform = "none";
+    const sr = stage.getBoundingClientRect(), tr = term.getBoundingClientRect();
+    stage.style.transform = was;
+    bounds = { minX: -view.W * 0.12, maxX: view.W * 0.12, minY: Math.min(0, tr.bottom + 10 - sr.top), maxY: 0 };
+    off.x = Math.max(bounds.minX, Math.min(bounds.maxX, off.x)); off.y = Math.max(bounds.minY, Math.min(bounds.maxY, off.y)); placeKb();
+  }
   const rgb = () => THEMES[theme][0];
 
   try { text = localStorage.getItem("shahzad.text") || ""; theme = +(localStorage.getItem("shahzad.theme") || 0) % THEMES.length; } catch {}
@@ -41,7 +52,7 @@ export function createKeyboard(root, fx) {
     });
     requestAnimationFrame(measure);
   }
-  function measure() { rects = [...kb.querySelectorAll(".key")].map((el) => { const r = el.getBoundingClientRect(); return { el, x: r.left, y: r.top, w: r.width, h: r.height }; }); }
+  function measure() { rects = [...kb.querySelectorAll(".key")].map((el) => { const r = el.getBoundingClientRect(); return { el, x: r.left - off.x, y: r.top - off.y, w: r.width, h: r.height }; }); }
   function relabel() {
     kb.querySelectorAll(".key").forEach((b) => {
       const k = b.dataset.k;
@@ -82,7 +93,6 @@ export function createKeyboard(root, fx) {
     const r = el.getBoundingClientRect();
     burst(r.left + r.width / 2, r.top + r.height / 2);
     tick(1700 + Math.random() * 900, 0.12, 0.045); buzz(8);
-    if (!typedOnce) { typedOnce = true; hint.classList.add("gone"); }
   }
   function fly(el, ch) {
     const r = el.getBoundingClientRect(), c = textEl.querySelector(".caret").getBoundingClientRect();
@@ -100,6 +110,7 @@ export function createKeyboard(root, fx) {
     parts.push({ ring: true, x, y, life: 1, d: 0.32 });
   }
   function hit(x, y) {
+    x -= off.x; y -= off.y;
     if (hover) { const h = rects.find((q) => q.el === hover); if (h && x > h.x - 8 && x < h.x + h.w + 8 && y > h.y - 8 && y < h.y + h.h + 8) return hover; }
     let best = null, bd = 1e9;
     for (const q of rects) {
@@ -111,8 +122,8 @@ export function createKeyboard(root, fx) {
   }
   function setHover(el) { if (el === hover) return; hover && hover.classList.remove("hover"); hover = el; el && el.classList.add("hover"); if (el) tick(3200, 0.02, 0.02); }
   function onHand(type, t) {
-    if (type === "pinchdown" && hover && t - lastPress > 130) { lastPress = t; holdT = t; repT = t; press(hover); }
-    if (type === "lost") { setHover(null); curOn = false; }
+    if (type === "pinchdown" && hover && !grab && t - lastPress > 130) { lastPress = t; holdT = t; repT = t; press(hover); }
+    if (type === "lost") { setHover(null); curOn = false; if (grab) { grab = null; kb.classList.remove("grab"); } }
   }
 
   /* digital rain behind everything, drawn at ~20fps with a fading trail */
@@ -144,7 +155,14 @@ export function createKeyboard(root, fx) {
       tgt[0] = (P[4][0] + P[8][0]) / 2; tgt[1] = (P[4][1] + P[8][1]) / 2;
       if (!curOn) { cur[0] = tgt[0]; cur[1] = tgt[1]; curOn = true; }
       const k = 1 - Math.exp(-dt * 34); cur[0] += (tgt[0] - cur[0]) * k; cur[1] += (tgt[1] - cur[1]) * k;
-      if (!hand.pinched) setHover(hit(cur[0], cur[1]));
+      const fist = hand.open < 1.32 || (grab && hand.open < 1.55);
+      if (fist) {
+        if (!grab) { grab = { x: P[9][0], y: P[9][1], ox: off.x, oy: off.y }; kb.classList.add("grab"); setHover(null); tick(420, 0.1, 0.12); buzz(15); }
+        off.x = Math.max(bounds.minX, Math.min(bounds.maxX, grab.ox + P[9][0] - grab.x));
+        off.y = Math.max(bounds.minY, Math.min(bounds.maxY, grab.oy + P[9][1] - grab.y));
+        placeKb();
+      } else if (grab) { grab = null; kb.classList.remove("grab"); tick(900, 0.08, 0.08); try { localStorage.setItem("shahzad.kbpos", JSON.stringify(off)); } catch {} }
+      if (!hand.pinched && !grab) setHover(hit(cur[0], cur[1]));
       if (hand.pinched && hover && hover.dataset.k === "⌫" && now - holdT > 520 && now - repT > 75) { repT = now; press(hover); }
       trail.push([P[8][0], P[8][1], now]);
       drawHand(ctx, P, col, 0.85);
@@ -177,11 +195,11 @@ export function createKeyboard(root, fx) {
   }
 
   kb.addEventListener("pointerdown", (e) => { const el = e.target.closest(".key"); if (el) { e.preventDefault(); press(el); } });
-  addEventListener("resize", () => !root.hidden && setTimeout(measure, 120));
+  addEventListener("resize", () => !root.hidden && setTimeout(() => { measureBounds(); measure(); }, 120));
   applyTheme(); build(); render(false);
   return {
-    enter() { root.hidden = false; hint.classList.toggle("gone", typedOnce); setTimeout(measure, 60); setTimeout(measure, 800); off = hand.on(onHand); },
-    exit() { root.hidden = true; off && off(); setHover(null); curOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
+    enter() { root.hidden = false; placeKb(); setTimeout(() => { measureBounds(); measure(); }, 60); setTimeout(() => { measureBounds(); measure(); }, 800); unsub = hand.on(onHand); },
+    exit() { root.hidden = true; unsub && unsub(); setHover(null); curOn = false; grab = null; kb.classList.remove("grab"); ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
   };
 }
