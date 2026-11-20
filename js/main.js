@@ -62,6 +62,14 @@ document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click"
 
 $("#ver").textContent = "Version " + VERSION;
 $("#refresh").addEventListener("click", () => { location.replace(location.pathname + "?u=" + Date.now()); });
+// Fully automatic updates: check for a newer version every 30 seconds and reload on our own.
+setInterval(async () => {
+  try {
+    const r = await fetch("js/version.js?t=" + Date.now(), { cache: "no-store" });
+    const m = (await r.text()).match(/VERSION = "([^"]+)"/);
+    if (m && m[1] !== VERSION) location.replace(location.pathname + "?u=" + Date.now());
+  } catch {}
+}, 30000);
 
 function loop(now) { active?.frame(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
