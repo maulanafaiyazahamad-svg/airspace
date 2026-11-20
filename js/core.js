@@ -31,7 +31,7 @@ export const cameraOn = () => !!stream;
 
 /* ---------- tracker ---------- */
 let landmarker = null, loading = null;
-export const tracker = { ready: false, fps: 0, latency: 0 };
+export const tracker = { ready: false, fps: 0, latency: 0, delegate: "" };
 export function loadTracker(onProgress = () => {}) {
   if (loading) return loading;
   loading = (async () => {
@@ -41,34 +41,63 @@ export function loadTracker(onProgress = () => {}) {
     const reader = res.body.getReader(); const parts = []; let got = 0;
     for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; onProgress(Math.min(1, got / total) * 0.85); }
     const buf = new Uint8Array(got); let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; }
-    const files = await FilesetResolver.forVisionTasks(new URL("../vendor/mediapipe/wasm", import.meta.url).href);
-    const opts = (delegate) => ({
-      baseOptions: { modelAssetBuffer: buf, delegate }, runningMode: "VIDEO", numHands: 1,
-      minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4,
-    });
-    try { landmarker = await HandLandmarker.createFromOptions(files, opts("GPU")); }
-    catch { landmarker = await HandLandmarker.createFromOptions(files, opts("CPU")); }
+    modelBuf = buf;
+    filesets = await FilesetResolver.forVisionTasks(new URL("../vendor/mediapipe/wasm", import.meta.url).href);
+    await build(useCpu ? "CPU" : "GPU");
     onProgress(1);
     tracker.ready = true;
     schedule();
+    setInterval(watchdog, 500);
   })();
   return loading;
 }
 
-let lastTs = 0, lastVT = -1, frames = 0, fpsT = performance.now();
+let modelBuf = null, filesets = null, rebuilding = false, errRun = 0, lastDetect = 0, useCpu = false;
+try { useCpu = localStorage.getItem("shahzad.cpu") === "1"; } catch {}
+async function build(delegate) {
+  const opts = (d) => ({
+    baseOptions: { modelAssetBuffer: modelBuf, delegate: d }, runningMode: "VIDEO", numHands: 1,
+    minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4,
+  });
+  try { landmarker?.close(); } catch {}
+  landmarker = null;
+  try { landmarker = await HandLandmarker.createFromOptions(filesets, opts(delegate)); tracker.delegate = delegate; }
+  catch { landmarker = await HandLandmarker.createFromOptions(filesets, opts("CPU")); tracker.delegate = "CPU"; }
+  lastTs = 0; errRun = 0;
+}
+// Keeps hand tracking alive: restarts the camera if the phone stopped it, restarts detection if it
+// stalled, and rebuilds the tracker (falling back from the GPU to the CPU) if it keeps failing.
+async function watchdog() {
+  if (rebuilding || !stream) return;
+  const track = stream.getVideoTracks()[0];
+  if (!track || track.readyState === "ended") { try { await startCamera(view.facing); } catch {} return; }
+  if (video.paused) { try { await video.play(); } catch {} }
+  if (errRun > 8) {
+    rebuilding = true;
+    const next = tracker.delegate === "GPU" ? "CPU" : "CPU";
+    if (next === "CPU") { useCpu = true; try { localStorage.setItem("shahzad.cpu", "1"); } catch {} }
+    try { await build(next); } catch {}
+    rebuilding = false;
+  }
+  if (performance.now() - lastDetect > 1200) schedule();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { video.play().catch(() => {}); setTimeout(watchdog, 300); } });
+let lastTs = 0, lastVT = -1, frames = 0, fpsT = performance.now(), pending = false;
 function schedule() {
-  if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(detect);
-  else requestAnimationFrame(() => (video.currentTime !== lastVT ? detect() : schedule()));
+  if (pending) return; pending = true;
+  if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => { pending = false; detect(); });
+  else requestAnimationFrame(() => { pending = false; video.currentTime !== lastVT ? detect() : schedule(); });
 }
 function detect() {
-  lastVT = video.currentTime;
-  if (landmarker && video.readyState >= 2 && video.videoWidth) {
+  lastVT = video.currentTime; lastDetect = performance.now();
+  if (landmarker && !rebuilding && video.readyState >= 2 && video.videoWidth) {
     let ts = performance.now(); if (ts <= lastTs) ts = lastTs + 0.1; lastTs = ts;
     try {
       const res = landmarker.detectForVideo(video, ts);
       tracker.latency = tracker.latency * 0.9 + (performance.now() - ts) * 0.1;
+      errRun = 0;
       hand.update(res, ts);
-    } catch (e) { /* skip a bad frame */ }
+    } catch (e) { errRun++; }
     frames++;
     if (ts - fpsT > 1000) { tracker.fps = Math.round((frames * 1000) / (ts - fpsT)); frames = 0; fpsT = ts; }
   }
