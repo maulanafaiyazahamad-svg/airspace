@@ -8,6 +8,7 @@
 //   🤘 index + little finger -> fire
 //   🖖 three fingers         -> spinning energy shield
 import { hand, predicted, drawHand, view, boom, tick, buzz, whoosh, blast } from "./core.js";
+import { shatterScreen } from "./glass.js";
 
 export function createPower(root, fx) {
   const ctx = fx.getContext("2d");
@@ -104,6 +105,7 @@ export function createPower(root, fx) {
     for (let i = 0; i < 120 * power; i++) embers.push({ x: x + (Math.random() - 0.5) * 300, y: y - Math.random() * 200, vx: (Math.random() - 0.5) * 200, vy: -200 - Math.random() * 500, life: 1, d: 1.6 + Math.random() * 1.6 });
     shake = 44 * power; flash = 1.3; punch = 0.12 * power;
     blast(Math.min(1.8, 1.2 * power)); crack(x, y, power);
+    if (power >= 0.9) shatterScreen(x, y, power);
     try { navigator.vibrate && navigator.vibrate([50, 30, 160]); } catch {}
   }
   function bolt(x0, y0, x1, y1, w = 1, depth = 0) {

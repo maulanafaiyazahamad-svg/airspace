@@ -183,7 +183,7 @@ export const hand = window.__hand = {
   vel: Array.from({ length: 21 }, () => [0, 0]),
   fx: Array.from({ length: 21 }, () => [new OneEuro(), new OneEuro()]),
   ext: [false, false, false, false], ratio: [2, 2, 2, 2], open: 2, thumbOut: false, sign: "other", _signCand: "", _signN: 0,
-  pinch: 0, pinched: false, gesture: "none", _cand: "none", _candN: 0,
+  pinch: 0, pinched: false, adapt: { hist: [], lo: 0.18, hi: 0.8, prev: null }, gesture: "none", _cand: "none", _candN: 0,
   palm: 1, listeners: new Set(),
   reset() { this.sign = "other"; this.present = false; this.fx.forEach((p) => { p[0].x = null; p[1].x = null; }); this.pinched = false; this.gesture = "none"; },
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
@@ -224,10 +224,23 @@ export const hand = window.__hand = {
     if (this._signN >= 2) this.sign = best;
     const tr = dist3(G[4], G[5]) / palm3;
     if (this.thumbOut && tr < 0.42) this.thumbOut = false; else if (!this.thumbOut && tr > 0.58) this.thumbOut = true;
-    const pr = dist3(G[4], G[8]) / palm3;
-    this.pinch = Math.max(0, Math.min(1, (0.8 - pr) / (0.8 - 0.28)));
+    // thumb-to-index gap: 3D when it is trustworthy, on screen as a second opinion
+    const pr3 = dist3(G[4], G[8]) / palm3, pr2 = dist(P[4], P[8]) / (this.palm || 1);
+    const pr = Math.min(pr3, pr2 * 1.05);
+    // learn this hand: how wide its pinch opens and how tight it closes, over the last few seconds
+    const ad = this.adapt;
+    ad.hist.push([t, pr]); while (ad.hist.length && t - ad.hist[0][0] > 5000) ad.hist.shift();
+    let lo = 9, hi = 0; for (const [, v] of ad.hist) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    ad.lo += (Math.min(0.3, Math.max(0.05, lo)) - ad.lo) * 0.08; ad.hi += (Math.min(1.1, Math.max(0.55, hi)) - ad.hi) * 0.08;
+    const span = Math.max(0.25, ad.hi - ad.lo);
+    const down = Math.min(0.34, Math.max(0.2, ad.lo + span * 0.32)), up = Math.min(0.62, ad.lo + span * 0.58);
+    this.pinch = Math.max(0, Math.min(1, (ad.hi - pr) / Math.max(0.1, ad.hi - down)));
     const was = this.pinched;
-    if (!this.pinched && pr < 0.28) this.pinched = true; else if (this.pinched && pr > 0.5) this.pinched = false;
+    // a quick snap of the fingers together also counts, even if the gap never gets very small
+    const snap = ad.prev != null && ad.prev - pr > span * 0.4 && pr < up;
+    if (!this.pinched && (pr < down || snap)) this.pinched = true;
+    else if (this.pinched && pr > up) this.pinched = false;
+    ad.prev = pr;
     this.finish(t, first, was);
   },
   finish(t, first, was) {

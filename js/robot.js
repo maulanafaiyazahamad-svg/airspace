@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
 import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio, blast as blastSound } from "./core.js";
+import { shatterScreen } from "./glass.js";
 
 const FLOOR = -1.5, CAM_Y = 0;
 const FIST_IN = 1.32, FIST_OUT = 1.55;   // hand.open thresholds (3D finger reach ratio)
@@ -406,6 +407,7 @@ export function createRobot(root, glCanvas, fx) {
     screenFlash("radial-gradient(circle at 50% 45%, #fff, rgba(255,170,90,.6) 40%, transparent 75%)", 0.85);
     timeScale = 0.18; slowHold = 0.85; shake = 0.4;
     blastSound(1.3);
+    { const v = origin.clone().project(camera); shatterScreen((v.x * 0.5 + 0.5) * view.W, (-v.y * 0.5 + 0.5) * view.H, 1.1); }
     try { navigator.vibrate && navigator.vibrate([70, 40, 200]); } catch {}
   }
   function rebuild() {
