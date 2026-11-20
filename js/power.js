@@ -15,6 +15,8 @@ export function createPower(root, fx) {
   let orb = 0, orbX = 0, orbY = 0, squeeze = 0, gripping = false, orbReadyAt = 0, chargedSnd = false;
   let shots = [], blasts = [], sparks = [], smoke = [], flames = [], bolts = [], strokes = [], pen = null;
   let vortex = 0, vortexOn = false, vx = 0, vy = 0, motes = [];
+  let streams = [], streaks = [], embers = [], punch = 0, charge = 0, skyT = 0;
+  const cam = document.getElementById("cam");
   let hole = 0, holeT = 0, holeX = 0, holeY = 0, shield = 0, shX = 0, shY = 0, boltT = 0, fireT = 0;
   const HUE = 195;
 
@@ -97,8 +99,11 @@ export function createPower(root, fx) {
     burst(x, y, 380 * power, 1300 * power, 30, 420, 3);
     burst(x, y, 160 * power, 700 * power, HUE, 200, 2);
     for (let i = 0; i < 26 * power; i++) { const a = Math.random() * 6.283, s = 60 + Math.random() * 220; smoke.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, r: 20 + Math.random() * 30, life: 1, d: 1.4 + Math.random() * 1.2 }); }
-    shake = 34 * power; flash = 1.2;
-    blast(Math.min(1.6, 1.1 * power)); crack(x, y, power);
+    blasts.push({ x, y, r: 4, life: 1, p: power * 1.4, late: 0.06, hue: 0 }, { x, y, r: 4, life: 1, p: power * 1.2, late: 0.2, hue: 190 });
+    streaks.push({ x, y, life: 1, w: 900 * power });
+    for (let i = 0; i < 120 * power; i++) embers.push({ x: x + (Math.random() - 0.5) * 300, y: y - Math.random() * 200, vx: (Math.random() - 0.5) * 200, vy: -200 - Math.random() * 500, life: 1, d: 1.6 + Math.random() * 1.6 });
+    shake = 44 * power; flash = 1.3; punch = 0.12 * power;
+    blast(Math.min(1.8, 1.2 * power)); crack(x, y, power);
     try { navigator.vibrate && navigator.vibrate([50, 30, 160]); } catch {}
   }
   function bolt(x0, y0, x1, y1, w = 1, depth = 0) {
@@ -119,6 +124,10 @@ export function createPower(root, fx) {
     const W = view.W, H = view.H, d = view.dpr;
     if (fx.width !== Math.round(W * d)) { fx.width = Math.round(W * d); fx.height = Math.round(H * d); }
     const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake; shake *= Math.pow(0.02, dt);
+    punch *= Math.pow(0.004, dt);
+    cam.style.transform = `${cam.classList.contains("mirror") ? "scaleX(-1) " : ""}translate(${sx * 0.8}px, ${sy * 0.8}px) scale(${1 + punch})`;
+    const fl = Math.max(0, flash);
+    cam.style.filter = fl > 0.01 || charge > 0.01 ? `brightness(${1 + fl * 1.6 + charge * 0.25}) saturate(${1 - fl * 0.5}) contrast(${1 + fl * 0.3})` : "";
     ctx.setTransform(d, 0, 0, d, sx * d, sy * d); ctx.clearRect(-60, -60, W + 120, H + 120);
 
     const P = hand.present ? predicted(now) : null;
@@ -128,6 +137,12 @@ export function createPower(root, fx) {
 
     /* ✋ orb: charge, ✊ squeeze, ✋ hurl */
     if (sign === "open") { orb = Math.min(1, orb + dt / 0.45); orbReadyAt = now; if (orb >= 1 && !chargedSnd) { chargedSnd = true; } }
+    charge = sign === "open" ? Math.min(1, charge + dt * 2) : Math.max(0, charge - dt * 3);
+    // power is drawn in from every edge of the screen into the open hand
+    if (sign === "open") for (let k = 0; k < 10; k++) {
+      const side = Math.random() * 4, ex = side < 1 ? 0 : side < 2 ? W : Math.random() * W, ey = side < 2 ? Math.random() * H : side < 3 ? 0 : H;
+      streams.push({ x: ex, y: ey, life: 1 });
+    }
     if (P) { orbX += (palmX - orbX) * Math.min(1, dt * 28); orbY += (palmY - 55 - orbY) * Math.min(1, dt * 28); }
     if (sign === "fist" && orb > 0.35 && (gripping || now - orbReadyAt < 1600)) {
       if (!gripping) { gripping = true; tick(260, 0.25); buzz(20); }
@@ -167,6 +182,13 @@ export function createPower(root, fx) {
         bolt(P[tip][0], P[tip][1], P[tip][0] + Math.cos(a) * L, P[tip][1] + Math.sin(a) * L, 1.4);
       }
       if (Math.random() < 0.5) tick(5000 + Math.random() * 2500, 0.1, 0.05);
+      // and lightning comes down from above into the fingers
+      if (now - skyT > 420) {
+        skyT = now; const tx = (P[8][0] + P[12][0]) / 2, ty = (P[8][1] + P[12][1]) / 2;
+        bolt(tx + (Math.random() - 0.5) * 200, -20, tx, ty, 2.6); bolt(tx + (Math.random() - 0.5) * 260, -20, tx, ty, 1.6);
+        flash = Math.max(flash, 0.45); shake = Math.max(shake, 10); blast(0.35); buzz(25);
+        burst(tx, ty, 60, 500, 210, 300, 2);
+      }
     }
 
     /* 🤘 fire */
@@ -279,7 +301,8 @@ export function createPower(root, fx) {
     for (let i = blasts.length - 1; i >= 0; i--) {
       const b = blasts[i]; if (b.late > 0) { b.late -= dt; continue; }
       b.life -= dt * 1.5; b.r += dt * 1500 * b.p; if (b.life <= 0) { blasts.splice(i, 1); continue; }
-      ctx.strokeStyle = `rgba(255,220,170,${b.life})`; ctx.lineWidth = 8 * b.life + 1; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.stroke();
+      ctx.strokeStyle = b.hue === 0 ? `rgba(255,90,70,${b.life})` : b.hue === 190 ? `rgba(110,220,255,${b.life})` : `rgba(255,220,170,${b.life})`;
+      ctx.lineWidth = 8 * b.life + 1; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.stroke();
       if (b.life > 0.7) glow(b.x, b.y, b.r * 0.8, [[0, `rgba(255,255,230,${(b.life - 0.7) * 3})`], [0.5, `rgba(255,150,60,${(b.life - 0.7) * 2})`], [1, "rgba(255,80,20,0)"]]);
     }
     for (let i = sparks.length - 1; i >= 0; i--) {
@@ -294,6 +317,25 @@ export function createPower(root, fx) {
       q.vx *= Math.pow(0.3, dt); q.vy = q.vy * Math.pow(0.3, dt) - 30 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.r += 40 * dt;
       glow(q.x, q.y, q.r, [[0, `rgba(40,36,34,${0.35 * q.life})`], [1, "rgba(40,36,34,0)"]]);
     }
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = streams.length - 1; i >= 0; i--) {
+      const q = streams[i], tx = orbX, ty = orbY, dx = tx - q.x, dy = ty - q.y, dd = Math.hypot(dx, dy) || 1, sp = 1400 + (1 - q.life) * 1800;
+      q.life -= dt * 1.4; if (q.life <= 0 || dd < 30) { streams.splice(i, 1); continue; }
+      const nx = q.x + (dx / dd) * sp * dt, ny = q.y + (dy / dd) * sp * dt;
+      ctx.strokeStyle = `rgba(150,215,255,${0.7 * (1 - q.life * 0.5)})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(nx, ny); ctx.stroke(); q.x = nx; q.y = ny;
+    }
+    for (let i = streaks.length - 1; i >= 0; i--) {
+      const q = streaks[i]; q.life -= dt * 1.8; if (q.life <= 0) { streaks.splice(i, 1); continue; }
+      const g = ctx.createLinearGradient(q.x - q.w, q.y, q.x + q.w, q.y);
+      g.addColorStop(0, "rgba(255,200,140,0)"); g.addColorStop(0.5, `rgba(255,250,235,${q.life})`); g.addColorStop(1, "rgba(255,200,140,0)");
+      ctx.fillStyle = g; ctx.fillRect(q.x - q.w, q.y - 3 - q.life * 5, q.w * 2, 6 + q.life * 10);
+    }
+    for (let i = embers.length - 1; i >= 0; i--) {
+      const q = embers[i]; q.life -= dt / q.d; if (q.life <= 0) { embers.splice(i, 1); continue; }
+      q.vx *= Math.pow(0.4, dt); q.vy = q.vy * Math.pow(0.5, dt) + 260 * dt; q.x += q.vx * dt + Math.sin(q.life * 20) * 0.6; q.y += q.vy * dt;
+      ctx.fillStyle = `hsla(${25 + q.life * 20},100%,${55 + q.life * 30}%,${q.life})`; ctx.fillRect(q.x, q.y, 2.5, 2.5);
+    }
     if (P) { ctx.globalCompositeOperation = "lighter"; powerHand(P, dt, now, gripping ? 0.4 + squeeze * 0.6 : hole > 0.1 ? 0.8 : 0); ctx.globalCompositeOperation = "source-over"; }
     else aura.length = 0;
     if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash * 0.75})`; ctx.fillRect(-60, -60, W + 120, H + 120); flash -= dt * 3; }
@@ -302,7 +344,7 @@ export function createPower(root, fx) {
 
   return {
     enter() { root.hidden = false; last = performance.now(); },
-    exit() { root.hidden = true; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); motes = []; },
+    exit() { root.hidden = true; cam.style.transform = ""; cam.style.filter = ""; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); motes = []; },
     frame,
     demoBlast: () => explode(view.W / 2, view.H / 2, 1),
   };
