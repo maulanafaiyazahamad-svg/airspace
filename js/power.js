@@ -9,6 +9,7 @@
 //   🖖 three fingers         -> spinning energy shield
 import { hand, predicted, drawHand, view, boom, tick, buzz, whoosh, blast } from "./core.js";
 import { shatterScreen } from "./glass.js";
+import { skin, skinClear, skinOK } from "./skin.js";
 
 export function createPower(root, fx) {
   const ctx = fx.getContext("2d");
@@ -72,6 +73,21 @@ export function createPower(root, fx) {
   function stamp(img, x, y, r, a) { ctx.globalAlpha = a; ctx.drawImage(img, x - r, y - r, r * 2, r * 2); }
 
   function powerHand(P, dt, now, heat) {
+    // the hand itself turns to stone with lightning inside (skin.js); here the power leaves it and travels far
+    if (!skinOK()) { oldHand(P, dt, now, heat); return; }
+    skin(P, now, { pw: Math.min(1, 0.55 + charge * 0.45 + heat * 0.5), heat, speed: hand.speed(9) });
+    const tips = [4, 8, 12, 16, 20];
+    if (now - arcT > 150 - heat * 90 - charge * 50) {
+      arcT = now;
+      const t = tips[(Math.random() * 5) | 0], base = t - 2;
+      const out = Math.atan2(P[t][1] - P[base][1], P[t][0] - P[base][0]) + (Math.random() - 0.5) * 1.4;
+      const L = 220 + Math.random() * 420 * (1 + heat + charge * 0.6);
+      bolt(P[t][0], P[t][1], P[t][0] + Math.cos(out) * L, P[t][1] + Math.sin(out) * L, 0.8 + heat * 0.6, 1);
+      if (Math.random() < 0.35) { const a = tips[(Math.random() * 5) | 0], b = tips[(Math.random() * 5) | 0]; if (a !== b) bolt(P[a][0], P[a][1], P[b][0], P[b][1], 0.5, 2); }
+      if (Math.random() < 0.25) burst(P[t][0], P[t][1], 10, 380, 210, 250, 1.6);
+    }
+  }
+  function oldHand(P, dt, now, heat) {
     // heat: 0 calm blue fire, 1 white-hot (fist charging)
     const n = 1 + Math.round(heat);
     for (const [a, b] of BONES) for (let k = 0; k < n; k++) {
@@ -352,14 +368,14 @@ export function createPower(root, fx) {
       ctx.fillStyle = `hsla(${25 + q.life * 20},100%,${55 + q.life * 30}%,${q.life})`; ctx.fillRect(q.x, q.y, 2.5, 2.5);
     }
     if (P) { ctx.globalCompositeOperation = "lighter"; powerHand(P, dt, now, gripping ? 0.4 + squeeze * 0.6 : hole > 0.1 ? 0.8 : 0); ctx.globalCompositeOperation = "source-over"; }
-    else aura.length = 0;
+    else { aura.length = 0; skin(null, now); }
     if (flash > 0) { ctx.fillStyle = `rgba(255,245,230,${flash * 0.75})`; ctx.fillRect(-60, -60, W + 120, H + 120); flash -= dt * 3; }
     drawCracks(dt);
   }
 
   return {
     enter() { root.hidden = false; last = performance.now(); },
-    exit() { root.hidden = true; cam.style.transform = ""; cam.style.filter = ""; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); motes = []; },
+    exit() { root.hidden = true; skinClear(); cam.style.transform = ""; cam.style.filter = ""; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, fx.width, fx.height); motes = []; },
     frame,
     demoBlast: () => explode(view.W / 2, view.H / 2, 1),
   };

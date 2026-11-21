@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "../vendor/three/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "../vendor/three/RoundedBoxGeometry.js";
 import { hand, predicted, drawHand, view, boom, tick, buzz, crunch, clink, rumble, audio, blast as blastSound } from "./core.js";
+import { skin, skinClear } from "./skin.js";
 import { shatterScreen } from "./glass.js";
 
 const FLOOR = -1.5, CAM_Y = 0;
@@ -656,9 +657,10 @@ export function createRobot(root, glCanvas, fx) {
     if (ready) renderer.render(scene, camera);
 
     // overlay: your hand, the laser, the grip tendrils
+    if (!P) skin(null, now);
     if (P) {
       const col = gripOn ? "255,90,40" : beam ? "255,60,60" : aim || carry ? "255,110,60" : "95,230,255";
-      drawHand(ctx, P, col, 0.9);
+      if (!skin(P, now, { pw: gripOn || beam ? 0.9 : 0.45, heat: gripOn ? 0.8 : 0, speed: hand.speed(9) })) drawHand(ctx, P, col, 0.9);
       ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
       if (beam) {
         const flick = 0.75 + Math.random() * 0.25;
@@ -708,7 +710,7 @@ export function createRobot(root, glCanvas, fx) {
 
   return {
     enter() { if (!inited) init(); root.hidden = false; glCanvas.hidden = false; gyro.on = false; gyro.ty = gyro.tp = gyro.yaw = gyro.pitch = 0; resize(); last = performance.now(); },
-    exit() { root.hidden = true; glCanvas.hidden = true; if (rum) { rum.stop(); rum = null; } if (laserSnd) { laserSnd.stop(); laserSnd = null; } gripOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
+    exit() { root.hidden = true; skinClear(); glCanvas.hidden = true; if (rum) { rum.stop(); rum = null; } if (laserSnd) { laserSnd.stop(); laserSnd = null; } gripOn = false; ctx.clearRect(0, 0, fx.width, fx.height); },
     frame,
     shatter: () => inited && shatter(1),
     debug: () => ({ burstPhase, gripOn, grip, armedAt, intactCount, sign: hand.sign, open: hand.open }),

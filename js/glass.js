@@ -20,7 +20,7 @@ function grab() {
     if (v.classList.contains("mirror")) { sctx.translate(W, 0); sctx.scale(-1, 1); }
     sctx.drawImage(v, (W - w) / 2, (H - h) / 2, w, h); sctx.restore();
   } else { sctx.fillStyle = "#000"; sctx.fillRect(0, 0, W, H); }
-  for (const id of ["gl", "fx"]) { const c = document.getElementById(id); if (c && !c.hidden && c.width) sctx.drawImage(c, 0, 0, W, H); }
+  for (const id of ["gl", "skin", "fx"]) { const c = document.getElementById(id); if (c && !c.hidden && c.width) sctx.drawImage(c, 0, 0, W, H); }
 }
 
 export function shatterScreen(x, y, power = 1) {
