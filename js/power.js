@@ -16,7 +16,7 @@ export function createPower(root, fx) {
   let orb = 0, orbX = 0, orbY = 0, squeeze = 0, gripping = false, orbReadyAt = 0, chargedSnd = false;
   let shots = [], blasts = [], sparks = [], smoke = [], flames = [], bolts = [], strokes = [], pen = null;
   let vortex = 0, vortexOn = false, vx = 0, vy = 0, motes = [];
-  let streams = [], streaks = [], embers = [], punch = 0, charge = 0, skyT = 0;
+  let streams = [], streaks = [], embers = [], punch = 0, charge = 0, skyT = 0, after = [];
   const cam = document.getElementById("cam");
   let hole = 0, holeT = 0, holeX = 0, holeY = 0, shield = 0, shX = 0, shY = 0, boltT = 0, fireT = 0;
   const HUE = 195;
@@ -99,7 +99,8 @@ export function createPower(root, fx) {
       const a = tips[(Math.random() * 5) | 0], b = tips[(Math.random() * 5) | 0];
       if (a !== b) bolt(P[a][0], P[a][1], P[b][0], P[b][1], 0.7, 2);
       const t2 = tips[(Math.random() * 5) | 0], ang = Math.random() * 6.283;
-      bolt(P[t2][0], P[t2][1], P[t2][0] + Math.cos(ang) * (60 + heat * 120), P[t2][1] + Math.sin(ang) * (60 + heat * 120), 0.6, 2);
+      const far = 160 + Math.random() * 340 * (1 + heat);
+      bolt(P[t2][0], P[t2][1], P[t2][0] + Math.cos(ang) * far, P[t2][1] + Math.sin(ang) * far, 0.8 + heat * 0.5, 1);
     }
     // glow of the palm
     const px = (P[0][0] + P[9][0]) / 2, py = (P[0][1] + P[9][1]) / 2;
@@ -116,7 +117,9 @@ export function createPower(root, fx) {
     blasts.push({ x, y, r: 4, life: 1, p: power * 1.4, late: 0.06, hue: 0 }, { x, y, r: 4, life: 1, p: power * 1.2, late: 0.2, hue: 190 });
     streaks.push({ x, y, life: 1, w: 900 * power });
     for (let i = 0; i < 120 * power; i++) embers.push({ x: x + (Math.random() - 0.5) * 300, y: y - Math.random() * 200, vx: (Math.random() - 0.5) * 200, vy: -200 - Math.random() * 500, life: 1, d: 1.6 + Math.random() * 1.6 });
-    shake = 44 * power; flash = 1.3; punch = 0.12 * power;
+    shake = 60 * power; flash = 1.4; punch = 0.16 * power;
+    if (!(power < 0.6)) for (let k = 0; k < 4; k++) { const a = Math.random() * 6.283, r = 120 + Math.random() * 220; after.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * 0.7, t: 0.12 + k * 0.11 + Math.random() * 0.08 }); }
+    for (let k = 0; k < 8; k++) { const a = (k / 8) * 6.283 + Math.random() * 0.4; bolt(x, y, x + Math.cos(a) * (300 + Math.random() * 400), y + Math.sin(a) * (300 + Math.random() * 400), 1.6, 1); }
     blast(Math.min(1.8, 1.2 * power)); crack(x, y, power);
     if (power >= 0.9) shatterScreen(x, y, power);
     try { navigator.vibrate && navigator.vibrate([50, 30, 160]); } catch {}
@@ -176,8 +179,8 @@ export function createPower(root, fx) {
 
     /* ✊ with no orb: black hole */
     if (sign === "fist" && !gripping && orb < 0.35) { if (!holeT) holeT = now; hole = Math.min(1, Math.max(0, (now - holeT - 350) / 700)); holeX = palmX; holeY = palmY; }
-    else { if (hole > 0.5 && (sign === "open" || !P)) explode(holeX, holeY, 1.6); holeT = 0; hole = Math.max(0, hole - dt * 4); }
-    if (hole > 0.05 && Math.random() < hole) { const a = Math.random() * 6.283, r = 160 + Math.random() * 120; motes.push({ x: holeX + Math.cos(a) * r, y: holeY + Math.sin(a) * r, life: 1, h: 25 }); }
+    else { if (hole > 0.5 && (sign === "open" || !P)) explode(holeX, holeY, 2); holeT = 0; hole = Math.max(0, hole - dt * 4); }
+    if (hole > 0.05 && Math.random() < hole) { const a = Math.random() * 6.283, r = 200 + Math.random() * 220; motes.push({ x: holeX + Math.cos(a) * r, y: holeY + Math.sin(a) * r, life: 1, h: 25 }); }
 
     /* ☝️ light pen */
     if (sign === "point") {
@@ -193,16 +196,18 @@ export function createPower(root, fx) {
     if (sign === "v" && now - boltT > 65) {
       boltT = now;
       for (const tip of [8, 12]) {
-        const a = Math.atan2(P[tip][1] - P[tip - 3][1], P[tip][0] - P[tip - 3][0]) + (Math.random() - 0.5) * 0.7, L = 280 + Math.random() * 380;
-        bolt(P[tip][0], P[tip][1], P[tip][0] + Math.cos(a) * L, P[tip][1] + Math.sin(a) * L, 1.4);
+        const a = Math.atan2(P[tip][1] - P[tip - 3][1], P[tip][0] - P[tip - 3][0]) + (Math.random() - 0.5) * 0.7, L = 480 + Math.random() * 650;
+        bolt(P[tip][0], P[tip][1], P[tip][0] + Math.cos(a) * L, P[tip][1] + Math.sin(a) * L, 2);
       }
       if (Math.random() < 0.5) tick(5000 + Math.random() * 2500, 0.1, 0.05);
       // and lightning comes down from above into the fingers
-      if (now - skyT > 420) {
+      if (now - skyT > 320) {
         skyT = now; const tx = (P[8][0] + P[12][0]) / 2, ty = (P[8][1] + P[12][1]) / 2;
-        bolt(tx + (Math.random() - 0.5) * 200, -20, tx, ty, 2.6); bolt(tx + (Math.random() - 0.5) * 260, -20, tx, ty, 1.6);
-        flash = Math.max(flash, 0.45); shake = Math.max(shake, 10); blast(0.35); buzz(25);
-        burst(tx, ty, 60, 500, 210, 300, 2);
+        bolt(tx + (Math.random() - 0.5) * 200, -20, tx, ty, 3.4); bolt(tx + (Math.random() - 0.5) * 300, -20, tx, ty, 2); bolt(tx + (Math.random() - 0.5) * 400, -20, tx, ty, 1.4);
+        flash = Math.max(flash, 0.6); shake = Math.max(shake, 18); blast(0.45); buzz(30);
+        burst(tx, ty, 90, 700, 210, 300, 2.2);
+        // and it hits the ground below too
+        bolt(tx, ty, tx + (Math.random() - 0.5) * 300, H + 20, 2.2);
       }
     }
 
@@ -210,9 +215,9 @@ export function createPower(root, fx) {
     if (sign === "rock") {
       for (const [tip, base] of [[8, 5], [20, 17]]) {
         let dx = P[tip][0] - P[base][0], dy = P[tip][1] - P[base][1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
-        for (let k = 0; k < 9; k++) {
-          const s = 520 + Math.random() * 520, a = (Math.random() - 0.5) * 0.4, c = Math.cos(a), si = Math.sin(a);
-          flames.push({ x: P[tip][0], y: P[tip][1], vx: (dx * c - dy * si) * s, vy: (dx * si + dy * c) * s, life: 1, d: 0.32 + Math.random() * 0.32, r: 3 + Math.random() * 4 });
+        for (let k = 0; k < 11; k++) {
+          const s = 820 + Math.random() * 720, a = (Math.random() - 0.5) * 0.4, c = Math.cos(a), si = Math.sin(a);
+          flames.push({ x: P[tip][0], y: P[tip][1], vx: (dx * c - dy * si) * s, vy: (dx * si + dy * c) * s, life: 1, d: 0.42 + Math.random() * 0.38, r: 4 + Math.random() * 5 });
         }
       }
       if (now - fireT > 200) { fireT = now; tick(700 + Math.random() * 300, 0.16, 0.2); }
@@ -235,6 +240,15 @@ export function createPower(root, fx) {
       motes = motes.filter((m) => m.h !== HUE); vortex = 0;
     }
 
+    // smaller blasts that follow the big one
+    for (let i = after.length - 1; i >= 0; i--) {
+      const q = after[i]; q.t -= dt; if (q.t > 0) continue; after.splice(i, 1);
+      blasts.push({ x: q.x, y: q.y, r: 4, life: 1, p: 0.45 }); burst(q.x, q.y, 70, 600, 30, 380, 2.4);
+      shake = Math.max(shake, 22); boom(0.3, 0.35);
+    }
+    if (sparks.length > 1400) sparks.splice(0, sparks.length - 1400);
+    if (flames.length > 500) flames.splice(0, flames.length - 500);
+    if (bolts.length > 120) bolts.splice(0, bolts.length - 120);
     /* ---------- draw ---------- */
     ctx.globalCompositeOperation = "lighter";
     for (let i = motes.length - 1; i >= 0; i--) {
@@ -287,7 +301,7 @@ export function createPower(root, fx) {
       ctx.restore();
     }
     if (hole > 0.02) {
-      const R = 16 + hole * 34;
+      const R = 20 + hole * 50;
       glow(holeX, holeY, R * 3.2, [[0.28, `rgba(255,190,110,${0.95 * hole})`], [0.45, `rgba(255,100,40,${0.45 * hole})`], [1, "rgba(255,60,20,0)"]]);
       ctx.strokeStyle = `rgba(255,225,190,${hole})`; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.ellipse(holeX, holeY, R * 2.4, R * 0.5, -0.35, 0, 6.283); ctx.stroke();
